@@ -19,7 +19,8 @@
     "hrm:approve": "tsx scripts/approve-joiner.ts",
     "hrm:org": "tsx scripts/seed-org.ts",
     "hrm:role": "tsx scripts/set-role.ts",
-    "hrm:import": "tsx scripts/import-employees.ts"
+    "hrm:import": "tsx scripts/import-employees.ts",
+    "qa:panel1": "tsx scripts/qa-panel1.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.12.0",

@@ -1,3 +1,4 @@
+import type { Prisma } from "@prisma/client";
 import { prisma } from "./db";
 
 /**
@@ -43,7 +44,7 @@ export type NotifyInput = {
  */
 export async function notify(
   input: NotifyInput | NotifyInput[],
-  tx?: { notification: { createMany: (args: { data: unknown[] }) => Promise<unknown> } },
+  tx?: Prisma.TransactionClient,
 ): Promise<void> {
   const rows = (Array.isArray(input) ? input : [input]).map((n) => ({
     userId: n.userId,
