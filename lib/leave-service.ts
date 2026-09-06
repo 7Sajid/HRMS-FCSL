@@ -2,6 +2,7 @@ import type { Employee, Prisma } from "@prisma/client";
 import { prisma } from "./db";
 import { toISODate, todayInDhaka } from "./dates";
 import {
+  allocateFifo,
   computeBalance,
   leaveYearBounds,
   proRatedDays,
@@ -196,4 +197,73 @@ export async function teamAwayOn(
   ]);
 
   return { away, teamSize: Math.max(teamSize, 1) };
+}
+
+/**
+ * Consume entitlement for a request that has just been finally approved.
+ *
+ * This is the moment §7.1 rule 3 describes: "The days come off the balance at
+ * this moment and not before." Until now the request has had LeaveDay rows and
+ * no junction rows at all.
+ *
+ * FIFO by bucket start date, so carry-forward burns before this year's grant —
+ * the carried days are the ones about to expire, which is what an employee
+ * would choose if asked.
+ */
+export async function consumeEntitlement(
+  tx: Prisma.TransactionClient,
+  requestId: string,
+): Promise<{ shortfall: number }> {
+  const days = await tx.leaveDay.findMany({
+    where: { leaveRequestId: requestId, lengthDays: { gt: 0 } },
+    orderBy: { date: "asc" },
+  });
+  if (!days.length) return { shortfall: 0 };
+
+  const employeeId = days[0]!.employeeId;
+  const leaveTypeId = days[0]!.leaveTypeId;
+  const earliest = days[0]!.date;
+  const latest = days.at(-1)!.date;
+
+  const buckets = await tx.leaveEntitlement.findMany({
+    where: {
+      employeeId,
+      leaveTypeId,
+      fromDate: { lte: latest },
+      toDate: { gte: earliest },
+    },
+  });
+
+  const used = await tx.leaveDayEntitlement.groupBy({
+    by: ["entitlementId"],
+    where: { entitlementId: { in: buckets.map((b) => b.id) } },
+    _sum: { lengthDays: true },
+  });
+  const usedById = new Map(used.map((u) => [u.entitlementId, Number(u._sum.lengthDays ?? 0)]));
+
+  const { allocations, shortfall } = allocateFifo(
+    buckets.map((b) => ({
+      id: b.id,
+      fromDate: b.fromDate,
+      toDate: b.toDate,
+      days: Number(b.days),
+      alreadyUsed: usedById.get(b.id) ?? 0,
+    })),
+    days.map((d) => ({ date: d.date, dayKind: d.dayKind, lengthDays: Number(d.lengthDays) })),
+  );
+
+  if (allocations.length) {
+    await tx.leaveDayEntitlement.createMany({
+      data: allocations.map((a) => ({
+        leaveDayId: days[a.leaveDayIndex]!.id,
+        entitlementId: a.bucketId,
+        lengthDays: a.lengthDays,
+      })),
+    });
+  }
+
+  // A shortfall means the person was granted more than they had. It is
+  // recorded rather than refused: the approval has already happened, and a
+  // silent partial allocation would make the balance lie.
+  return { shortfall };
 }

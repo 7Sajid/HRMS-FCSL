@@ -1,12 +1,19 @@
 import { requireCapability } from "@/lib/auth";
-import { EmptyState, PageHeader } from "@/components/ui/Card";
+import { PageHeader } from "@/components/ui/Card";
+import { LeaveInbox } from "@/components/approvals/LeaveInbox";
+
+export const metadata = { title: "Leave waiting for me · FCSL HR" };
 
 export default async function Page() {
-  await requireCapability("leave.approve");
+  const context = await requireCapability("leave.approve");
+
   return (
-    <main className="mx-auto max-w-5xl px-6 py-10">
-      <PageHeader title="Leave waiting for me" subtitle="Manager panel — Panel 2." />
-      <EmptyState>Not built yet.</EmptyState>
+    <main className="mx-auto max-w-4xl px-6 py-10">
+      <PageHeader
+        title="Leave waiting for me"
+        subtitle="Your team's applications. Granting passes each one to the HR Head — it does not finish it."
+      />
+      <LeaveInbox actorRole={context.user.role} actorEmployeeId={context.employeeId} />
     </main>
   );
 }
