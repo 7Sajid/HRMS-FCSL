@@ -1,0 +1,1276 @@
+// FCSL HR Management System — data model
+//
+// Written against docs/System Breakdown v2.0.md. Section references below
+// (§4, §6.2, §9, §12) point at that document, which is the specification.
+//
+// This file covers ALL FOUR modules — records, leave, attendance, requisition,
+// compliance, exit and the registers — even though the screens arrive one
+// panel at a time. Schema is the expensive thing to change once there is data
+// in it, so it is decided once, at the start, with the whole system in view.
+//
+// Conventions
+//   - Models PascalCase, fields camelCase, no @map. Table names match.
+//   - String @id @default(cuid()).
+//   - @db.Timestamptz(3) for instants; @db.Date for calendar dates. A joining
+//     date has no time and no zone. See lib/dates.ts.
+//   - Nullable timestamps as state — disabledAt, revokedAt, retiredAt,
+//     releasedOn — rather than booleans. "When did this happen" is a question
+//     HR will ask, and a boolean cannot answer it.
+//   - Every historical row carries the actor's id AND a denormalised name
+//     snapshot. The ids are plain Strings with no Prisma relation: they are
+//     facts about the past, the name is what gets displayed, and thirty
+//     relations back to User would make this file unreadable without adding
+//     any safety — accounts are disabled, never deleted (§6.1).
+//   - NOTHING IS EVER DELETED (§6.1). Documents are superseded; people are
+//     marked LEFT. The one exception is the one-year document purge in §12,
+//     which removes the files and keeps the record.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+
+  // The app connects through the transaction-mode pooler (port 6543). A
+  // connection is borrowed for one query and handed straight back, so many
+  // serverless invocations share a small pool.
+  url = env("DATABASE_URL")
+
+  // Migrations only, port 5432. They need a connection that survives more than
+  // one statement, which transaction pooling does not give.
+  directUrl = env("DIRECT_URL")
+}
+
+// ===========================================================================
+// Identity and access
+// ===========================================================================
+
+/// The five kinds of user (§2). RM is deliberately NOT here — see
+/// Employee.staffType. An RM uses exactly the same screens as any employee.
+enum Role {
+  SUPER_ADMIN
+  HR_HEAD
+  HR_EXECUTIVE
+  MANAGER
+  EMPLOYEE
+}
+
+model User {
+  id           String @id @default(cuid())
+  email        String @unique
+  passwordHash String
+
+  /// Authorisation is read from here on every request, never from the session
+  /// cookie — a cookie is something the holder could influence or that could
+  /// simply be stale.
+  role Role @default(EMPLOYEE)
+
+  /// §4 step 2: HR hands over a temporary password by hand, by phone or in the
+  /// joining meeting — never by automatic email, because anyone who can read
+  /// that inbox could otherwise become that employee. It works once.
+  mustChangePassword    Boolean   @default(true)
+  /// Seven days, then it stops working and HR issues another. A temporary
+  /// password that stays valid for months is a way in that nobody is watching.
+  tempPasswordExpiresAt DateTime? @db.Timestamptz(3)
+
+  /// Accounts are disabled, never deleted — their approvals have to stay
+  /// attributable. Set automatically at the end of an exit's last working day.
+  disabledAt DateTime? @db.Timestamptz(3)
+
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+  createdById   String?
+  createdByName String   @default("")
+
+  /// Optional: the first Super Admin is created at installation and has no
+  /// employee record behind it (§3).
+  employee      Employee?
+  sessions      Session[]
+  notifications Notification[]
+  notes         Note[]
+
+  @@index([role, createdAt])
+  @@index([disabledAt])
+}
+
+/// Sessions are rows, not just signed cookies, so they can be revoked — on
+/// sign-out, on an exit, or when a laptop is lost.
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userAgent  String    @default("")
+  ip         String    @default("")
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  /// Touched at most every five minutes, and never allowed to throw — a
+  /// failed bookkeeping write must not sign somebody out.
+  lastSeenAt DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt  DateTime  @db.Timestamptz(3)
+  revokedAt  DateTime? @db.Timestamptz(3)
+
+  @@index([userId, createdAt])
+  @@index([expiresAt])
+}
+
+/// Rate limiting, checked before the database is asked about the email, so a
+/// flood of guesses costs an index scan rather than a bcrypt comparison.
+model LoginAttempt {
+  id        String   @id @default(cuid())
+  key       String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([key, createdAt])
+}
+
+// ===========================================================================
+// The person
+// ===========================================================================
+
+/// STAFF or RM. This is not a permission — it decides which documents are
+/// demanded at the locked door (§4) and whether a BSEC certificate is tracked.
+enum StaffType {
+  STAFF
+  RM
+}
+
+/// The locked door (§3). DRAFT and SENT_BACK both mean "can only upload".
+enum OnboardingStatus {
+  DRAFT
+  SUBMITTED
+  SENT_BACK
+  APPROVED
+}
+
+/// §6.6. Drives every headcount figure in the system, which is the whole point
+/// of recording leavers at all.
+enum EmployeeStatus {
+  ACTIVE
+  LEFT
+}
+
+model Employee {
+  id     String @id @default(cuid())
+  userId String @unique
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// "A 413 - 26 - 70" (§12.1). Null until HR approves the documents — the ID
+  /// is issued at the moment of approval, not at account creation.
+  employeeId String? @unique
+  /// The same value in parts, so the sequence can be reasoned about and the
+  /// register sorted without parsing a display string.
+  idLetter   String?
+  idNumber   Int?
+  idYear     Int?
+
+  staffType        StaffType        @default(STAFF)
+  onboardingStatus OnboardingStatus @default(DRAFT)
+  status           EmployeeStatus   @default(ACTIVE)
+
+  // --- Identity (§6.1). Typed by HR from the scan; reading documents with AI
+  // is deferred, so there is no unconfirmed state to represent yet.
+  fullName         String
+  fatherName       String    @default("")
+  motherName       String    @default("")
+  dateOfBirth      DateTime? @db.Date
+  gender           String    @default("")
+  nationality      String    @default("")
+  religion         String    @default("")
+  maritalStatus    String    @default("")
+  nidNumber        String    @default("")
+  mobile           String    @default("")
+  personalEmail    String    @default("")
+  presentAddress   String    @default("")
+  permanentAddress String    @default("")
+
+  /// Storage key of the accepted PHOTOGRAPH document, cached here so a list of
+  /// four hundred people does not need four hundred extra queries. Written
+  /// only when that document is accepted.
+  photoKey String?
+
+  // --- Employment. These are the CURRENT values, and they are a cache of the
+  // EmployeeAssignment row whose effectiveTo is null. History is authoritative;
+  // a transfer writes a new assignment and updates these, never overwrites.
+  branchId      String?
+  branch        Branch?      @relation("BranchStaff", fields: [branchId], references: [id], onDelete: SetNull)
+  departmentId  String?
+  department    Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id], onDelete: SetNull)
+  gradeId       String?
+  grade         Grade?       @relation(fields: [gradeId], references: [id], onDelete: SetNull)
+  managerId     String?
+  manager       Employee?    @relation("EmployeeManager", fields: [managerId], references: [id], onDelete: SetNull)
+  reports       Employee[]   @relation("EmployeeManager")
+
+  joiningDate      DateTime? @db.Date
+  confirmationDate DateTime? @db.Date
+  lastWorkingDay   DateTime? @db.Date
+
+  // --- Onboarding trail (§4 step 5).
+  submittedAt    DateTime? @db.Timestamptz(3)
+  approvedAt     DateTime? @db.Timestamptz(3)
+  approvedById   String?
+  approvedByName String    @default("")
+  sendBackReason String    @default("")
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  bankDetail          EmployeeBankDetail?
+  assignments         EmployeeAssignment[] @relation("AssignmentEmployee")
+  managedAssignments  EmployeeAssignment[] @relation("AssignmentManager")
+  emergencyContacts   EmergencyContact[]
+  correctionRequests  CorrectionRequest[]
+  documents           EmployeeDocument[]
+  certificates        RmCertificate[]
+  terminalAssignments TerminalAssignment[]
+  leaveRequests       LeaveRequest[]
+  leaveDays           LeaveDay[]
+  entitlements        LeaveEntitlement[]
+  attendanceEntries   AttendanceEntry[]
+  requisitions        Requisition[]
+  showCauses          ShowCause[]
+  exit                Exit?
+  branchesManaged     Branch[]             @relation("BranchManager")
+  calendarEvents      CalendarEvent[]
+
+  @@index([status, onboardingStatus])
+  @@index([branchId, status])
+  @@index([departmentId, status])
+  @@index([managerId, status])
+  @@index([staffType, status])
+  @@index([onboardingStatus, submittedAt])
+  @@index([fullName])
+}
+
+/// Bank details are a SEPARATE TABLE on purpose.
+///
+/// §9 gives them to the HR Executive and the HR Head — and NOT to the Super
+/// Admin. Keeping them off the Employee row means an accidental
+/// `employee.findMany()` cannot leak them: reading them has to be asked for,
+/// and asking is where the permission check lives.
+model EmployeeBankDetail {
+  id         String   @id @default(cuid())
+  employeeId String   @unique
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  accountName   String @default("")
+  accountNumber String @default("")
+  bankName      String @default("")
+  branchName    String @default("")
+  routingNumber String @default("")
+
+  updatedById   String?
+  updatedByName String   @default("")
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+}
+
+enum AssignmentReason {
+  JOINING
+  TRANSFER
+  PROMOTION
+  MANAGER_CHANGE
+  IMPORT
+  CORRECTION
+}
+
+/// The dated employment history (§5.3, §6.1). A transfer is an event, never an
+/// overwrite: the old branch keeps its history and the new one takes over from
+/// the transfer date.
+///
+/// This table is also what makes a manager's access answerable — "the old
+/// manager keeps access to the records of the period when that person reported
+/// to them, and loses access to everything after the transfer date" (§5.2).
+/// The current row is the one with effectiveTo = null.
+model EmployeeAssignment {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation("AssignmentEmployee", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  effectiveFrom DateTime  @db.Date
+  effectiveTo   DateTime? @db.Date
+
+  branchId      String?
+  branch        Branch?      @relation(fields: [branchId], references: [id], onDelete: SetNull)
+  departmentId  String?
+  department    Department?  @relation(fields: [departmentId], references: [id], onDelete: SetNull)
+  designationId String?
+  designation   Designation? @relation(fields: [designationId], references: [id], onDelete: SetNull)
+  gradeId       String?
+  grade         Grade?       @relation(fields: [gradeId], references: [id], onDelete: SetNull)
+  managerId     String?
+  manager       Employee?    @relation("AssignmentManager", fields: [managerId], references: [id], onDelete: SetNull)
+
+  reason         AssignmentReason
+  note           String           @default("")
+  recordedById   String?
+  recordedByName String           @default("")
+  createdAt      DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@index([employeeId, effectiveFrom])
+  @@index([managerId, effectiveFrom, effectiveTo])
+  @@index([branchId, effectiveFrom])
+}
+
+enum ContactStatus {
+  CURRENT
+  PENDING
+  SUPERSEDED
+}
+
+/// §5.1 page 3. The employee MAY edit this, and the change goes to HR as a
+/// one-click approval with the previous version kept.
+///
+/// Emergency numbers change when people move house or change SIM. Left
+/// view-only — as the original draft had it — this page fills over three years
+/// with numbers that no longer connect, and it is the one page that matters on
+/// the worst day of somebody's career.
+model EmergencyContact {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  /// 1 is the mandatory contact, 2 the optional alternate (§4).
+  slot         Int
+  name         String        @default("")
+  relationship String        @default("")
+  mobile       String        @default("")
+  address      String        @default("")
+  status       ContactStatus @default(CURRENT)
+
+  supersedesId String?
+  supersedes   EmergencyContact?  @relation("ContactVersions", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy EmergencyContact[] @relation("ContactVersions")
+
+  proposedById    String?
+  proposedByName  String    @default("")
+  proposedAt      DateTime  @default(now()) @db.Timestamptz(3)
+  approvedById    String?
+  approvedByName  String    @default("")
+  approvedAt      DateTime? @db.Timestamptz(3)
+  rejectionReason String    @default("")
+
+  @@index([employeeId, slot, status])
+  @@index([status, proposedAt])
+}
+
+enum CorrectionStatus {
+  OPEN
+  RESOLVED
+  DECLINED
+}
+
+/// The "Request a correction" button on page 1 (§5.1). A note to HR, never a
+/// direct edit — the employee looks at their record, HR edits it.
+model CorrectionRequest {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  field    String           @default("")
+  message  String
+  status   CorrectionStatus @default(OPEN)
+  response String           @default("")
+
+  raisedAt      DateTime  @default(now()) @db.Timestamptz(3)
+  handledById   String?
+  handledByName String    @default("")
+  handledAt     DateTime? @db.Timestamptz(3)
+
+  @@index([status, raisedAt])
+  @@index([employeeId, raisedAt])
+}
+
+/// The document catalogue (§4). A closed set, because the list is fixed by the
+/// specification and a typo in a free-text kind would quietly create a
+/// requirement nobody can satisfy. lib/documents.ts holds the labels and the
+/// required/optional rules per staff type.
+enum DocumentKind {
+  CV
+  NID
+  PHOTOGRAPH
+  EDUCATION_CERTIFICATE
+  EXPERIENCE_LETTER
+  RELEASE_LETTER
+  APPOINTMENT_LETTER
+  JOINING_LETTER
+  RM_CERTIFICATE
+  BANK_DETAILS
+  TRAINING_CERTIFICATE
+  CONFIRMATION_LETTER
+  CLEARANCE_DOCUMENT
+  EXIT_RELEASE_LETTER
+  SHOWCAUSE_LETTER
+  SHOWCAUSE_REPLY
+  LEAVE_ATTACHMENT
+  REQUISITION_BILL
+  OTHER
+}
+
+enum DocumentStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+model EmployeeDocument {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  kind  DocumentKind
+  /// Free-text label for kinds that allow several files under one heading —
+  /// "BBA transcript", "SSC certificate" (§4).
+  label String       @default("")
+
+  /// Files are addressed by key, never by URL. There is no link that still
+  /// works if somebody forwards it; reads go through app/api/download, which
+  /// re-checks permission and records the view (§6.1).
+  storageKey   String
+  originalName String
+  mimeType     String
+  size         Int
+
+  status          DocumentStatus @default(PENDING)
+  rejectionReason String         @default("")
+
+  /// RM certificate only (§4 step 3, §6.8).
+  issueDate  DateTime? @db.Date
+  expiryDate DateTime? @db.Date
+
+  uploadedById   String?
+  uploadedByName String    @default("")
+  uploadedAt     DateTime  @default(now()) @db.Timestamptz(3)
+  reviewedById   String?
+  reviewedByName String    @default("")
+  reviewedAt     DateTime? @db.Timestamptz(3)
+
+  /// A wrong document is superseded, not removed — the new version becomes
+  /// current and the old one stays underneath, marked replaced (§6.1).
+  supersedesId    String?
+  supersedes      EmployeeDocument?  @relation("DocumentVersions", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy    EmployeeDocument[] @relation("DocumentVersions")
+  supersededAt    DateTime?          @db.Timestamptz(3)
+  supersedeReason String             @default("")
+
+  /// Set by the one-year purge (§12): the file is gone from storage, the row
+  /// stays so the file's existence and its history remain readable.
+  purgedAt DateTime? @db.Timestamptz(3)
+
+  certificates RmCertificate[]
+
+  @@index([employeeId, kind, status])
+  @@index([status, uploadedAt])
+  @@index([expiryDate])
+}
+
+/// Private notes (§6, "Calendar and notes"). There is no read path to these
+/// for anybody else at any level, the Super Admin included. A notepad
+/// management can read is not a notepad, and people will simply not use it.
+model Note {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body      String
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([userId, updatedAt])
+}
+
+// ===========================================================================
+// Organisation
+// ===========================================================================
+
+model Branch {
+  id      String @id @default(cuid())
+  name    String
+  code    String @unique
+  address String @default("")
+  phone   String @default("")
+
+  openedOn DateTime? @db.Date
+  /// Closing a branch is marking it closed on a date, not deleting it. Its
+  /// people must be moved somewhere else first (§6.7).
+  closedOn DateTime? @db.Date
+
+  branchManagerId String?
+  branchManager   Employee? @relation("BranchManager", fields: [branchManagerId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  employees        Employee[]           @relation("BranchStaff")
+  assignments      EmployeeAssignment[]
+  terminals        TradingTerminal[]
+  attendanceSheets AttendanceSheet[]
+  calendarEvents   CalendarEvent[]
+
+  @@index([closedOn])
+}
+
+/// Departments, designations and grades are HR-managed lists, not code. They
+/// are retired, never deleted, because historic assignments point at them.
+model Department {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  retiredAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  employees   Employee[]
+  assignments EmployeeAssignment[]
+}
+
+model Designation {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  retiredAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  employees   Employee[]
+  assignments EmployeeAssignment[]
+}
+
+model Grade {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  /// Seniority order, so "headcount by grade" sorts sensibly rather than
+  /// alphabetically.
+  rank      Int       @default(0)
+  retiredAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  employees   Employee[]
+  assignments EmployeeAssignment[]
+}
+
+/// The employee ID counter (§12.1), deliberately a single row.
+///
+/// Allocation takes a row lock, so two HR Executives pressing Approve at the
+/// same moment cannot be handed the same number. The running number never
+/// resets at the year end and is never reused; at 999 the letter advances and
+/// the number restarts at 001.
+model EmployeeIdSequence {
+  id         Int      @id @default(1)
+  letter     String   @default("A")
+  nextNumber Int      @default(413)
+  updatedAt  DateTime @updatedAt @db.Timestamptz(3)
+}
+
+// ===========================================================================
+// Registers
+// ===========================================================================
+
+enum CertificateStatus {
+  ACTIVE
+  SUPERSEDED
+  SURRENDERED
+}
+
+/// §6.8. Green, amber and red are DERIVED from expiryDate against today — never
+/// stored, never written by a background job. A status column would need
+/// something to keep it true, and that something is always the thing that
+/// breaks quietly.
+///
+/// The warning is four months, and it warns ONLY. It never blocks the person's
+/// account or their work, whatever the certificate says (§12.2).
+model RmCertificate {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  certificateNumber String
+  issueDate         DateTime @db.Date
+  expiryDate        DateTime @db.Date
+
+  documentId String?
+  document   EmployeeDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  status        CertificateStatus @default(ACTIVE)
+  surrenderedOn DateTime?         @db.Date
+
+  recordedById   String?
+  recordedByName String   @default("")
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([status, expiryDate])
+  @@index([employeeId, status])
+}
+
+enum TerminalStatus {
+  ACTIVE
+  SUSPENDED
+  SURRENDERED
+}
+
+/// §6.9. This register lives in the HR system rather than with IT because a
+/// terminal is tied to a person, and that person's right to use it depends on
+/// their certificate being valid and their still being employed. Next to the
+/// certificate register and the staff list, the system can answer by itself:
+/// is anybody holding an active terminal whose certificate has expired, or who
+/// has already left? That is what a BSEC inspection asks.
+model TradingTerminal {
+  id         String @id @default(cuid())
+  terminalId String @unique
+  exchange   String
+
+  branchId String?
+  branch   Branch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
+
+  status    TerminalStatus @default(ACTIVE)
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime       @updatedAt @db.Timestamptz(3)
+
+  assignments TerminalAssignment[]
+
+  @@index([status])
+}
+
+/// Dated assignments. The current holder is the row whose releasedOn is null —
+/// and an exit cannot complete while such a row exists (§6.6 step 3).
+model TerminalAssignment {
+  id         String          @id @default(cuid())
+  terminalId String
+  terminal   TradingTerminal @relation(fields: [terminalId], references: [id], onDelete: Cascade)
+  employeeId String
+  employee   Employee        @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  assignedOn DateTime  @db.Date
+  releasedOn DateTime? @db.Date
+  note       String    @default("")
+
+  assignedById   String?
+  assignedByName String   @default("")
+  createdAt      DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([employeeId, releasedOn])
+  @@index([terminalId, releasedOn])
+}
+
+// ===========================================================================
+// Calendar
+// ===========================================================================
+
+/// Entered once a year by the HR Head (§12.2). Government holidays in
+/// Bangladesh are announced annually, so this cannot be built into the code.
+model Holiday {
+  id      String   @id @default(cuid())
+  date    DateTime @unique @db.Date
+  name    String
+  /// Some holidays are half days. A half day costs 0.5 of a leave day.
+  halfDay Boolean  @default(false)
+  year    Int
+
+  createdById   String?
+  createdByName String   @default("")
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([year])
+}
+
+/// Friday and Saturday (§12.2) — but stored as a dated rule rather than a
+/// constant, so that if FCSL ever changes its week, last year's leave still
+/// computes on last year's rule and old records do not silently change meaning.
+model WeeklyOffRule {
+  id            String   @id @default(cuid())
+  effectiveFrom DateTime @db.Date
+  /// getUTCDay() values: 0 Sunday … 6 Saturday. Friday and Saturday is [5, 6].
+  days          Int[]
+  createdById   String?
+  createdByName String   @default("")
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([effectiveFrom])
+}
+
+enum CalendarScope {
+  COMPANY
+  BRANCH
+  EMPLOYEE
+}
+
+/// §5.1: "HR can announce a meeting with (Employee, Branch, Full Company) in
+/// that calendar and will be notified to all or selected persons."
+model CalendarEvent {
+  id    String        @id @default(cuid())
+  title String
+  body  String        @default("")
+  scope CalendarScope
+
+  branchId   String?
+  branch     Branch?   @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  employeeId String?
+  employee   Employee? @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  startsAt DateTime @db.Timestamptz(3)
+  endsAt   DateTime @db.Timestamptz(3)
+
+  createdById   String?
+  createdByName String   @default("")
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([startsAt])
+  @@index([scope, startsAt])
+}
+
+// ===========================================================================
+// Leave
+//
+// The shape here is the one decision in this file that cannot be retrofitted.
+//
+// A leave REQUEST is a header — who, which type, applied when. It has no start
+// date, no end date and no status column. A leave DAY is one row per calendar
+// date in the range, INCLUDING Fridays, Saturdays and public holidays, which
+// get dayKind WEEKLY_OFF or HOLIDAY and lengthDays 0. So the request preserves
+// the dates the employee actually typed while contributing nothing to the
+// balance, and no calendar logic is needed at query time.
+//
+// A naive leave(startDate, endDate, days, status) table cannot later grow
+// half-days, partial cancellation or accurate balances. This one can.
+// ===========================================================================
+
+model LeaveType {
+  id        String    @id @default(cuid())
+  name      String
+  code      String    @unique
+  /// Retired, never deleted — historic leave still points at it.
+  retiredAt DateTime? @db.Timestamptz(3)
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  rules         LeaveTypeRule[]
+  entitlements  LeaveEntitlement[]
+  leaveRequests LeaveRequest[]
+  leaveDays     LeaveDay[]
+}
+
+/// What happens when an application exceeds the balance (§6.2, HR's choice).
+enum OverBalancePolicy {
+  REFUSE
+  WARN
+}
+
+/// Dated rule versions, NEVER overwritten (§12.2). Changing this year's
+/// entitlement must not silently rewrite what last year's leave meant.
+model LeaveTypeRule {
+  id          String    @id @default(cuid())
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  effectiveFrom DateTime @db.Date
+
+  daysPerYear                 Decimal           @db.Decimal(6, 2)
+  carryForward                Boolean           @default(false)
+  carryForwardCap             Decimal?          @db.Decimal(6, 2)
+  overBalance                 OverBalancePolicy @default(REFUSE)
+  /// A medical certificate for extended sick leave (§6.2). Null = never.
+  attachmentRequiredAfterDays Int?
+
+  createdById   String?
+  createdByName String   @default("")
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([leaveTypeId, effectiveFrom])
+  @@index([effectiveFrom])
+}
+
+enum EntitlementSource {
+  GRANT
+  CARRY_FORWARD
+  ADJUSTMENT
+}
+
+/// Dated buckets, not a running counter. Carry-forward from last year and this
+/// year's grant are separate buckets with separate validity windows, which is
+/// what lets a single leave day draw partly from each.
+model LeaveEntitlement {
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  fromDate DateTime @db.Date
+  toDate   DateTime @db.Date
+  days     Decimal  @db.Decimal(8, 2)
+
+  source EntitlementSource @default(GRANT)
+  note   String            @default("")
+
+  createdById   String?
+  createdByName String   @default("")
+  createdAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  /// There is deliberately NO daysUsed counter. The balance is computed from
+  /// the junction below. Keeping both means keeping two answers to the same
+  /// question, and they will eventually disagree.
+  consumption LeaveDayEntitlement[]
+
+  @@index([employeeId, leaveTypeId, fromDate])
+}
+
+enum LeaveRequestStatus {
+  PENDING
+  GRANTED
+  DENIED
+  WITHDRAWN
+  CANCELLED
+}
+
+model LeaveRequest {
+  id          String    @id @default(cuid())
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Restrict)
+
+  reason       String
+  appliedAt    DateTime @default(now()) @db.Timestamptz(3)
+  /// Set when the application is made after the dates have started (§6.2).
+  lateReason   String   @default("")
+  attachmentId String?
+
+  status LeaveRequestStatus @default(PENDING)
+
+  /// The chain (§7.1). One inbox at a time: currentStep indexes into the chain
+  /// for this applicant's role, and currentApproverRole is who holds it now.
+  /// Null once the request is finished.
+  currentStep         Int   @default(0)
+  currentApproverRole Role?
+
+  decidedAt DateTime? @db.Timestamptz(3)
+
+  days      LeaveDay[]
+  approvals LeaveApproval[]
+
+  @@index([employeeId, appliedAt])
+  @@index([status, currentApproverRole, appliedAt])
+  @@index([currentApproverRole, status])
+}
+
+enum LeaveDayKind {
+  WORKING
+  WEEKLY_OFF
+  HOLIDAY
+}
+
+/// One row per calendar date in the applied range. Weekends and holidays are
+/// materialised here at lengthDays 0 rather than skipped, so the request shows
+/// the dates the employee asked for and the arithmetic needs no calendar.
+model LeaveDay {
+  id             String       @id @default(cuid())
+  leaveRequestId String
+  leaveRequest   LeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+
+  /// Duplicated from the header on purpose: every balance and calendar query
+  /// filters on these, and none of them should need a join to do it.
+  employeeId  String
+  employee    Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  leaveTypeId String
+  leaveType   LeaveType @relation(fields: [leaveTypeId], references: [id], onDelete: Cascade)
+
+  date       DateTime     @db.Date
+  dayKind    LeaveDayKind
+  /// 1 for a full working day, 0.5 for a half day, 0 for a weekly off or
+  /// holiday inside the range.
+  lengthDays Decimal      @db.Decimal(4, 2)
+
+  consumption LeaveDayEntitlement[]
+
+  @@index([employeeId, date])
+  @@index([leaveRequestId, dayKind])
+  @@index([date])
+}
+
+/// The junction that carries a quantity.
+///
+/// One leave day can draw 0.5 from last year's carry-forward and 0.5 from this
+/// year's grant — two rows summing to the day's length. One bucket funds many
+/// days. Cancelling a day releases exactly the right fraction back to exactly
+/// the right bucket, and the row is a permanent record of which grant paid for
+/// which day.
+model LeaveDayEntitlement {
+  id            String           @id @default(cuid())
+  leaveDayId    String
+  leaveDay      LeaveDay         @relation(fields: [leaveDayId], references: [id], onDelete: Cascade)
+  entitlementId String
+  entitlement   LeaveEntitlement @relation(fields: [entitlementId], references: [id], onDelete: Cascade)
+
+  lengthDays Decimal @db.Decimal(4, 2)
+
+  @@unique([leaveDayId, entitlementId])
+  @@index([entitlementId])
+}
+
+enum ApprovalDecision {
+  GRANTED
+  DENIED
+}
+
+/// Each step of the chain, kept whether it approved or denied. A denial ends
+/// the chain; nobody above that point is ever notified (§7.1 rule 2).
+model LeaveApproval {
+  id             String       @id @default(cuid())
+  leaveRequestId String
+  leaveRequest   LeaveRequest @relation(fields: [leaveRequestId], references: [id], onDelete: Cascade)
+
+  step         Int
+  approverRole Role
+  approverId   String?
+  approverName String           @default("")
+  decision     ApprovalDecision
+  /// Required for a denial. The system will not accept an empty one (§5.2).
+  reason       String           @default("")
+  decidedAt    DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@unique([leaveRequestId, step])
+  @@index([approverId, decidedAt])
+}
+
+// ===========================================================================
+// Attendance
+// ===========================================================================
+
+enum SheetStatus {
+  OPEN
+  SUBMITTED
+  PUBLISHED
+}
+
+/// One sheet per branch per month (§6.3). Submitting LOCKS it: an attendance
+/// record that can be changed quietly afterwards is worth nothing in a dispute.
+model AttendanceSheet {
+  id       String @id @default(cuid())
+  branchId String
+  branch   Branch @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  year     Int
+  month    Int
+
+  status SheetStatus @default(OPEN)
+
+  submittedById   String?
+  submittedByName String    @default("")
+  submittedAt     DateTime? @db.Timestamptz(3)
+  publishedById   String?
+  publishedByName String    @default("")
+  publishedAt     DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  entries AttendanceEntry[]
+
+  @@unique([branchId, year, month])
+  @@index([status, year, month])
+}
+
+enum AttendanceMark {
+  PRESENT
+  ABSENT
+  LATE
+  ON_LEAVE
+  PUBLIC_HOLIDAY
+  WEEKLY_OFF
+  /// A person visiting a client is neither present in the branch nor absent,
+  /// and treating them as absent creates arguments (§6.3).
+  OFFICIAL_DUTY
+}
+
+model AttendanceEntry {
+  id      String          @id @default(cuid())
+  sheetId String
+  sheet   AttendanceSheet @relation(fields: [sheetId], references: [id], onDelete: Cascade)
+
+  employeeId String
+  employee   Employee       @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  date       DateTime       @db.Date
+  mark       AttendanceMark
+  note       String         @default("")
+
+  corrections AttendanceCorrection[]
+
+  @@unique([sheetId, employeeId, date])
+  @@index([employeeId, date])
+}
+
+/// HR's corrections stay visible for ever alongside the original entry, and
+/// the manager can see what HR changed and why (§6.3).
+model AttendanceCorrection {
+  id      String          @id @default(cuid())
+  entryId String
+  entry   AttendanceEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+
+  previousMark AttendanceMark
+  newMark      AttendanceMark
+  reason       String
+
+  correctedById   String?
+  correctedByName String   @default("")
+  correctedAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([entryId, correctedAt])
+}
+
+// ===========================================================================
+// Requisition
+// ===========================================================================
+
+enum RequisitionType {
+  OFFICE_SUPPLIES
+  IT_EQUIPMENT
+  MONEY_EXPENSE
+  NEW_STAFF
+}
+
+enum RequisitionStatus {
+  PENDING
+  APPROVED
+  DENIED
+  WITHDRAWN
+  FULFILLED
+}
+
+/// Raised by managers, HR and the Super Admin only (§6.4). Employees and RMs
+/// ask their manager, who raises it on their behalf.
+model Requisition {
+  id           String   @id @default(cuid())
+  raisedById   String
+  raisedBy     Employee @relation(fields: [raisedById], references: [id], onDelete: Cascade)
+  raisedByName String   @default("")
+
+  type    RequisitionType
+  /// Type-specific fields — quantity, specification, purpose, headcount. The
+  /// journey afterwards is identical for all four, which is why this is one
+  /// feature and not four.
+  details Json
+  /// Money/expense only. Decimal, never a float.
+  amount  Decimal?        @db.Decimal(14, 2)
+
+  status              RequisitionStatus @default(PENDING)
+  currentStep         Int               @default(0)
+  currentApproverRole Role?
+
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  decidedAt      DateTime? @db.Timestamptz(3)
+  fulfilledAt    DateTime? @db.Timestamptz(3)
+  fulfilmentNote String    @default("")
+
+  approvals RequisitionApproval[]
+
+  @@index([status, currentApproverRole, createdAt])
+  @@index([raisedById, createdAt])
+}
+
+model RequisitionApproval {
+  id            String      @id @default(cuid())
+  requisitionId String
+  requisition   Requisition @relation(fields: [requisitionId], references: [id], onDelete: Cascade)
+
+  step         Int
+  approverRole Role
+  approverId   String?
+  approverName String           @default("")
+  decision     ApprovalDecision
+  reason       String           @default("")
+  decidedAt    DateTime         @default(now()) @db.Timestamptz(3)
+
+  @@unique([requisitionId, step])
+}
+
+// ===========================================================================
+// Compliance
+// ===========================================================================
+
+enum ShowCauseOutcome {
+  NO_ACTION
+  WARNING
+  ESCALATED
+}
+
+model ShowCauseTemplate {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  body      String
+  retiredAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+}
+
+/// §6.5. Visible to the HR Head and the employee, and NOBODY else by default —
+/// not even their manager, unless the HR Head chooses to include them. Every
+/// single opening is recorded in the audit log.
+model ShowCause {
+  id         String   @id @default(cuid())
+  employeeId String
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  subject String
+  body    String
+
+  issuedById   String?
+  issuedByName String   @default("")
+  issuedAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  acknowledgedAt  DateTime? @db.Timestamptz(3)
+  replyBody       String    @default("")
+  replyDocumentId String?
+  repliedAt       DateTime? @db.Timestamptz(3)
+
+  outcome      ShowCauseOutcome?
+  outcomeNote  String            @default("")
+  closedById   String?
+  closedByName String            @default("")
+  closedAt     DateTime?         @db.Timestamptz(3)
+
+  /// Off by default. The HR Head has to choose to let the manager see it.
+  visibleToManager Boolean @default(false)
+
+  @@index([employeeId, issuedAt])
+  @@index([closedAt])
+}
+
+// ===========================================================================
+// Exit and clearance
+// ===========================================================================
+
+enum ExitReason {
+  RESIGNATION
+  END_OF_CONTRACT
+  TERMINATION
+  RETIREMENT
+}
+
+/// §6.6. An employee leaving is one of the highest-risk moments in a
+/// brokerage: the terminal must be surrendered, the certificate status
+/// changed, and system access closed the same day.
+model Exit {
+  id         String   @id @default(cuid())
+  employeeId String   @unique
+  employee   Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  reason         ExitReason
+  reasonNote     String     @default("")
+  lastWorkingDay DateTime   @db.Date
+
+  releaseLetterDocumentId String?
+
+  recordedById   String?
+  recordedByName String   @default("")
+  recordedAt     DateTime @default(now()) @db.Timestamptz(3)
+
+  /// Null until every clearance line is ticked, the terminal is released and
+  /// the certificate is surrendered. The system will not let HR finish an exit
+  /// while a terminal is still assigned — the single most important safeguard
+  /// in this module.
+  completedAt     DateTime? @db.Timestamptz(3)
+  completedById   String?
+  completedByName String    @default("")
+
+  /// lastWorkingDay + one year (§12.2). On this date the uploaded FILES are
+  /// removed; the employee record itself is kept permanently so the headcount
+  /// and joiner-leaver reports stay correct for ever.
+  documentsPurgeAfter DateTime  @db.Date
+  documentsPurgedAt   DateTime? @db.Timestamptz(3)
+
+  clearanceItems ClearanceItem[]
+
+  @@index([completedAt, lastWorkingDay])
+  @@index([documentsPurgeAfter, documentsPurgedAt])
+}
+
+enum ClearanceArea {
+  IT
+  ACCOUNTS
+  ADMIN
+  HR
+  CLIENT_HANDOVER
+}
+
+model ClearanceItem {
+  id     String @id @default(cuid())
+  exitId String
+  exit   Exit   @relation(fields: [exitId], references: [id], onDelete: Cascade)
+
+  area  ClearanceArea
+  label String
+
+  clearedById   String?
+  clearedByName String    @default("")
+  clearedAt     DateTime? @db.Timestamptz(3)
+  note          String    @default("")
+
+  @@index([exitId, area])
+}
+
+// ===========================================================================
+// Underneath everything
+// ===========================================================================
+
+/// The permanent record (§6, "Underneath all ten").
+///
+/// Every action that changes something, or reveals somebody's private
+/// information, writes one line that can never be edited or deleted — not by
+/// HR, not by the Super Admin, not by the person who built the software. That
+/// last part is enforced by a Postgres trigger, in its own migration, not by
+/// this file and not by convention.
+///
+/// `action` is a String rather than an enum on purpose: the log is append-only,
+/// so a retired action name must keep rendering correctly for ever. Adding an
+/// enum value needs a migration; removing one would quietly edit history. The
+/// closed set lives in lib/audit.ts as a TypeScript union instead.
+model AuditEvent {
+  id     String @id @default(cuid())
+  action String
+
+  /// The actor as they were AT THE TIME. Denormalised deliberately: a log line
+  /// that renders differently after somebody's role changes is not a log.
+  actorId   String?
+  actorName String  @default("")
+  actorRole String  @default("")
+
+  targetType  String?
+  targetId    String?
+  targetLabel String  @default("")
+
+  /// Old value and new value, the reason given, the number of rows changed.
+  detail Json?
+
+  ip        String   @default("")
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([createdAt])
+  @@index([actorId, createdAt])
+  @@index([targetType, targetId, createdAt])
+  @@index([action, createdAt])
+}
+
+model Notification {
+  id     String @id @default(cuid())
+  userId String
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title String
+  body  String @default("")
+  /// A path back into the system. Notifications never carry personal
+  /// information — the reader has to be logged in to see it (§8).
+  link  String @default("")
+
+  readAt    DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  /// The morning digest (§8) has already reported this one.
+  digestedAt DateTime? @db.Timestamptz(3)
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
+}
+
+/// Key/value configuration that HR can change without a developer — the
+/// requisition escalation threshold, the attendance deadline day.
+model Setting {
+  key           String   @id
+  value         String
+  updatedById   String?
+  updatedByName String   @default("")
+  updatedAt     DateTime @updatedAt @db.Timestamptz(3)
+}
