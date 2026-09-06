@@ -25,7 +25,8 @@
     "qa:chain": "tsx scripts/qa-chain.ts",
     "qa": "npm run qa:clean && npm run qa:leave && npm run qa:chain && npm run qa:exit",
     "qa:clean": "tsx scripts/qa-clean.ts",
-    "qa:exit": "tsx scripts/qa-exit.ts"
+    "qa:exit": "tsx scripts/qa-exit.ts",
+    "qa:import": "tsx scripts/qa-import.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.12.0",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { exportFileName, toCsv } from "./csv";
+import { exportFileName, parseCsv, toCsv } from "./csv";
 
 describe("CSV export", () => {
   it("starts with a BOM so Excel does not mangle Bangla names", () => {
@@ -46,5 +46,36 @@ describe("CSV export", () => {
     expect(exportFileName("employees", new Date("2026-09-06T10:00:00Z"))).toBe(
       "fcsl-employees-2026-09-06.csv",
     );
+  });
+});
+
+describe("reading a CSV back", () => {
+  it("round-trips what it writes", () => {
+    const csv = toCsv(["A", "B"], [["one", "two"], ["three", "four"]]);
+    const parsed = parseCsv(csv);
+    expect(parsed.headers).toEqual(["A", "B"]);
+    expect(parsed.rows).toEqual([["one", "two"], ["three", "four"]]);
+  });
+
+  it("handles a comma inside a quoted cell", () => {
+    const parsed = parseCsv('"Name","Branch"\n"Uddin, Rahim","Motijheel"');
+    expect(parsed.rows[0]).toEqual(["Uddin, Rahim", "Motijheel"]);
+  });
+
+  it("handles a doubled quote", () => {
+    expect(parseCsv('"Note"\n"He said ""no"""').rows[0]).toEqual(['He said "no"']);
+  });
+
+  it("handles both line endings, because the file comes from somebody's Excel", () => {
+    expect(parseCsv("A,B\r\n1,2\r\n").rows).toEqual([["1", "2"]]);
+    expect(parseCsv("A,B\n1,2\n").rows).toEqual([["1", "2"]]);
+  });
+
+  it("does not turn a trailing newline into an empty row", () => {
+    expect(parseCsv("A\n1\n\n").rows).toEqual([["1"]]);
+  });
+
+  it("survives the BOM Excel writes", () => {
+    expect(parseCsv("﻿A,B\n1,2").headers).toEqual(["A", "B"]);
   });
 });

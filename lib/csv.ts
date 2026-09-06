@@ -52,3 +52,46 @@ export function csvResponse(body: string, fileName: string): Response {
     },
   });
 }
+
+/**
+ * Read a CSV back. Handles quoted cells, embedded commas, doubled quotes and
+ * both line endings, because the file is coming from somebody's Excel and not
+ * from us.
+ */
+export function parseCsv(text: string): { headers: string[]; rows: string[][] } {
+  const clean = text.replace(/^﻿/, "");
+  const rows: string[][] = [];
+  let row: string[] = [];
+  let cell = "";
+  let quoted = false;
+
+  for (let i = 0; i < clean.length; i += 1) {
+    const char = clean[i];
+    if (quoted) {
+      if (char === '"') {
+        if (clean[i + 1] === '"') {
+          cell += '"';
+          i += 1;
+        } else quoted = false;
+      } else cell += char;
+      continue;
+    }
+    if (char === '"') quoted = true;
+    else if (char === ",") {
+      row.push(cell);
+      cell = "";
+    } else if (char === "\n" || char === "\r") {
+      if (char === "\r" && clean[i + 1] === "\n") i += 1;
+      row.push(cell);
+      // A trailing newline should not become a row of one empty cell.
+      if (row.some((c) => c.trim())) rows.push(row);
+      row = [];
+      cell = "";
+    } else cell += char;
+  }
+  row.push(cell);
+  if (row.some((c) => c.trim())) rows.push(row);
+
+  const headers = (rows.shift() ?? []).map((h) => h.trim());
+  return { headers, rows };
+}
