@@ -194,15 +194,29 @@ export function requiredKinds(staffType: StaffType): DocumentKind[] {
 }
 
 /**
- * Everything a person may add after their panel opens — §5.1 page 2: "an
- * employee can add a training certificate, a confirmation letter or clearance
- * documents at any time, but cannot replace or delete a document HR has
- * already accepted."
+ * What a person may add after their panel opens — §5.1 page 2: "an employee
+ * can add a training certificate, a confirmation letter or clearance documents
+ * at any time, but cannot replace or delete a document HR has already
+ * accepted."
+ *
+ * Three cases, and nothing else. Offering a CV box to somebody whose CV is
+ * already on file is noise that hides the two headings this section exists
+ * for.
+ *
+ *   - the ones that arrive later by nature (confirmation, clearance)
+ *   - the ones that take several files under one heading
+ *   - anything they simply have not supplied yet
  */
-export function laterUploadKinds(staffType: StaffType): DocumentSpec[] {
-  return DOCUMENT_CATALOGUE.filter(
-    (spec) => requirementFor(spec, staffType) !== "not_applicable" && !spec.isForm,
-  );
+export function laterUploadKinds(
+  staffType: StaffType,
+  onFile: ReadonlySet<DocumentKind> = new Set(),
+): DocumentSpec[] {
+  return DOCUMENT_CATALOGUE.filter((spec) => {
+    if (requirementFor(spec, staffType) === "not_applicable" || spec.isForm) return false;
+    if (spec.laterOnly) return true;
+    if (spec.multiple) return true;
+    return !onFile.has(spec.kind);
+  });
 }
 
 /** "6 of 9 required documents uploaded". */

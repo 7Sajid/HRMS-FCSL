@@ -90,20 +90,50 @@ export async function saveEmergencyContact(_previous: unknown, formData: FormDat
   const employee = context.employee;
   const ip = await currentIp();
 
-  // Before the door opens the employee is filling their file in for the first
-  // time, so this is a straight write. AFTER approval the same edit becomes a
-  // proposal that HR approves (§5.1 page 3) — that path is P1.4.
+  // Before the door opens the employee is still filling their file in for the
+  // first time, so this writes straight through. AFTER approval the same edit
+  // becomes a PROPOSAL: §5.1 page 3 promises "the change goes to HR as a
+  // one-click approval" and "the previous version is kept".
+  //
+  // That second promise is the reason this is not an update. Overwriting the
+  // current row would leave the screen truthfully saying "the old details stay
+  // in use" while the old details no longer existed anywhere — and the number
+  // that got overwritten is the one somebody rings on the worst day of a
+  // career.
   const beforeApproval = employee.onboardingStatus !== "APPROVED";
 
   await prisma.$transaction(async (tx) => {
-    const current = await tx.emergencyContact.findFirst({
-      where: { employeeId: employee.id, slot, status: { in: ["CURRENT", "PENDING"] } },
-    });
+    const [current, pending] = await Promise.all([
+      tx.emergencyContact.findFirst({
+        where: { employeeId: employee.id, slot, status: "CURRENT" },
+      }),
+      tx.emergencyContact.findFirst({
+        where: { employeeId: employee.id, slot, status: "PENDING" },
+      }),
+    ]);
 
-    if (current) {
+    if (beforeApproval) {
+      // Still at Stage 1: this IS the record, not a change to one.
+      if (current) {
+        await tx.emergencyContact.update({ where: { id: current.id }, data: parsed.data });
+      } else {
+        await tx.emergencyContact.create({
+          data: {
+            employeeId: employee.id,
+            slot,
+            ...parsed.data,
+            status: "CURRENT",
+            proposedById: context.user.id,
+            proposedByName: employee.fullName,
+          },
+        });
+      }
+    } else if (pending) {
+      // Editing a change HR has not looked at yet amends that proposal rather
+      // than stacking a second one in their queue.
       await tx.emergencyContact.update({
-        where: { id: current.id },
-        data: { ...parsed.data, status: beforeApproval ? "CURRENT" : "PENDING" },
+        where: { id: pending.id },
+        data: { ...parsed.data, proposedAt: new Date() },
       });
     } else {
       await tx.emergencyContact.create({
@@ -111,7 +141,10 @@ export async function saveEmergencyContact(_previous: unknown, formData: FormDat
           employeeId: employee.id,
           slot,
           ...parsed.data,
-          status: beforeApproval ? "CURRENT" : "PENDING",
+          status: "PENDING",
+          // Points at what it would replace, so HR sees both sides and the
+          // history stays linked after approval.
+          supersedesId: current?.id ?? null,
           proposedById: context.user.id,
           proposedByName: employee.fullName,
         },
@@ -124,10 +157,26 @@ export async function saveEmergencyContact(_previous: unknown, formData: FormDat
       targetType: "employee",
       targetId: employee.id,
       targetLabel: employee.fullName,
-      detail: { slot, duringOnboarding: beforeApproval },
+      detail: { slot, duringOnboarding: beforeApproval, amendedExisting: Boolean(pending) },
       ip,
       tx,
     });
+
+    if (!beforeApproval) {
+      const hr = await tx.user.findMany({
+        where: { role: { in: ["HR_EXECUTIVE", "HR_HEAD"] }, disabledAt: null },
+        select: { id: true },
+      });
+      await notify(
+        hr.map((r) => ({
+          userId: r.id,
+          title: `${employee.fullName} changed an emergency contact`,
+          body: "One click to approve it.",
+          link: `/hr/employees/${employee.id}`,
+        })),
+        tx,
+      );
+    }
   });
 
   revalidatePath("/onboarding");

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   DOCUMENT_CATALOGUE,
   documentLabel,
+  laterUploadKinds,
   onboardingChecklist,
   progressFor,
   requiredKinds,
@@ -123,5 +124,37 @@ describe("labels", () => {
     // SHOWCAUSE_REPLY and the rest are real documents that are never part of
     // onboarding, so they have no catalogue entry and must still print.
     expect(documentLabel("SHOWCAUSE_REPLY")).toBe("showcause reply");
+  });
+});
+
+describe("what an employee may add after their panel opens (§5.1 page 2)", () => {
+  it("always offers the two that arrive later by nature", () => {
+    const kinds = laterUploadKinds("STAFF", new Set(requiredKinds("STAFF"))).map((s) => s.kind);
+    expect(kinds).toContain("CONFIRMATION_LETTER");
+    expect(kinds).toContain("CLEARANCE_DOCUMENT");
+    expect(kinds).toContain("TRAINING_CERTIFICATE");
+  });
+
+  it("stops asking for a single-file document already on file", () => {
+    const onFile = new Set<DocumentKind>(["CV", "APPOINTMENT_LETTER"]);
+    const kinds = laterUploadKinds("STAFF", onFile).map((s) => s.kind);
+    expect(kinds).not.toContain("CV");
+    expect(kinds).not.toContain("APPOINTMENT_LETTER");
+  });
+
+  it("keeps offering the ones that take several files", () => {
+    const onFile = new Set<DocumentKind>(["NID", "EDUCATION_CERTIFICATE"]);
+    const kinds = laterUploadKinds("STAFF", onFile).map((s) => s.kind);
+    expect(kinds).toContain("NID");
+    expect(kinds).toContain("EDUCATION_CERTIFICATE");
+  });
+
+  it("never offers an employee the RM certificate", () => {
+    expect(laterUploadKinds("STAFF", new Set()).map((s) => s.kind)).not.toContain("RM_CERTIFICATE");
+    expect(laterUploadKinds("RM", new Set()).map((s) => s.kind)).toContain("RM_CERTIFICATE");
+  });
+
+  it("never offers bank details as a file", () => {
+    expect(laterUploadKinds("RM", new Set()).map((s) => s.kind)).not.toContain("BANK_DETAILS");
   });
 });
