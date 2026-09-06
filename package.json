@@ -20,7 +20,8 @@
     "hrm:org": "tsx scripts/seed-org.ts",
     "hrm:role": "tsx scripts/set-role.ts",
     "hrm:import": "tsx scripts/import-employees.ts",
-    "qa:panel1": "tsx scripts/qa-panel1.ts"
+    "qa:panel1": "tsx scripts/qa-panel1.ts",
+    "qa:leave": "tsx scripts/qa-leave.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.12.0",
