@@ -1,0 +1,18 @@
+node_modules
+.next
+out
+build
+.DS_Store
+
+# Environment — never committed. See .env.example for the shape.
+.env
+.env*.local
+
+# Local development file storage. In production documents live in Supabase
+# Storage; this folder is the dev fallback and must never be committed because
+# it would contain real scanned NIDs.
+/storage
+
+*.tsbuildinfo
+.vercel
+coverage

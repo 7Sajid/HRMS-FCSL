@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+/* ---------------------------------------------------------------------------
+   The FCSL palette. Identical to the Client's Portal so the two products read
+   as one house style — an employee who uses both should not feel they have
+   changed company between tabs.
+
+   Five token families and no more. Anything that needs a sixth colour is
+   almost always a badge that should have reused `success` or `warn`.
+   --------------------------------------------------------------------------- */
+@theme {
+  /* Brand — deep maroon. brand-500 is the primary: buttons, links, active nav.
+     brand-50 tints an active nav row, brand-100 is the focus ring, brand-600
+     is the hover state. */
+  --color-brand-50: #fdf5f5;
+  --color-brand-100: #f8e6e6;
+  --color-brand-200: #eeccce;
+  --color-brand-300: #d69b9c;
+  --color-brand-400: #a85558;
+  --color-brand-500: #6e1616;
+  --color-brand-600: #5a1317;
+  --color-brand-700: #4a1219;
+  --color-brand-800: #3c121b;
+  --color-brand-900: #2a0d13;
+
+  /* Ink — the neutral text scale. Borders are this scale with an alpha:
+     ink-300/40 for structure, /60 for inputs, /20 for table row dividers. */
+  --color-ink-900: #17181c;
+  --color-ink-700: #3f4149;
+  --color-ink-500: #6b6f7b;
+  --color-ink-400: #979ba6;
+  --color-ink-300: #c3c6cf;
+
+  /* The page sits on this, cards sit on white. */
+  --color-surface: #f7f7f9;
+
+  --color-success-500: #16a34a;
+  --color-success-50: #e9f9ef;
+  --color-warn-500: #f59e0b;
+  --color-warn-50: #fef5e7;
+}
+
+/* Destructive actions deliberately use stock Tailwind red-50/600/700 rather
+   than a token. There is no FCSL red, and inventing one would put a brand
+   colour on the delete button. */
+
+body {
+  background: var(--color-surface);
+  color: var(--color-ink-900);
+  /* Inter's single-storey a and l with a tail. Employee IDs like A 413 - 26 - 70
+     and account numbers are read aloud down a phone; the ambiguity costs. */
+  font-feature-settings: "cv02", "cv03";
+}
+
+/* Numbers that are compared down a column — balances, day counts, amounts —
+   should line up. Applied by class, not globally: tabular figures look wrong
+   in running prose. */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
