@@ -4,6 +4,7 @@ import bcrypt from "bcryptjs";
 import { SignJWT } from "jose";
 import { loadOnboardingState } from "../lib/onboarding";
 import { deleteObject } from "../lib/storage";
+import { cleanFixtures } from "./qa-clean";
 import { prisma, finish } from "./_cli";
 
 /**
@@ -77,6 +78,10 @@ async function upload(
 }
 
 async function main() {
+  // A previous run killed partway through (piped to `head`, say) leaves its
+  // fixtures behind. Sweep before starting rather than trusting a finally.
+  await cleanFixtures();
+
   // Built by the same helper that made them for the browser walk.
   const scratch = process.argv[2] ?? ".";
   const pdf = readFileSync(path.join(scratch, "test-doc.pdf"));

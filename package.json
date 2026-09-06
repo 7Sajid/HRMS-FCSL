@@ -23,7 +23,8 @@
     "qa:panel1": "tsx scripts/qa-panel1.ts",
     "qa:leave": "tsx scripts/qa-leave.ts",
     "qa:chain": "tsx scripts/qa-chain.ts",
-    "qa": "npm run qa:leave && npm run qa:chain"
+    "qa": "npm run qa:clean && npm run qa:leave && npm run qa:chain",
+    "qa:clean": "tsx scripts/qa-clean.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.12.0",

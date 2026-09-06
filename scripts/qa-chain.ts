@@ -5,6 +5,7 @@ import { chainStart } from "../lib/approval-chain";
 import { planLeaveDays } from "../lib/leave";
 import { ensureEntitlements, leaveTypesFor } from "../lib/leave-service";
 import { applyLeaveDecision } from "../lib/leave-decide";
+import { cleanFixtures } from "./qa-clean";
 import { prisma, finish } from "./_cli";
 
 /**
@@ -74,6 +75,10 @@ function decideAs(
 }
 
 async function main() {
+  // A previous run killed partway through (piped to `head`, say) leaves its
+  // fixtures behind. Sweep before starting rather than trusting a finally.
+  await cleanFixtures();
+
   const boss = await person("QA Boss", "MANAGER");
   const hrHead = await person("QA HR Head", "HR_HEAD");
   const superAdmin = await person("QA Super Admin", "SUPER_ADMIN");

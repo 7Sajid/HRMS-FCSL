@@ -3,6 +3,7 @@ import { calendarDate, toISODate } from "../lib/dates";
 import { chainStart } from "../lib/approval-chain";
 import { ensureEntitlements, leaveTypesFor, bookedDates } from "../lib/leave-service";
 import { planLeaveDays } from "../lib/leave";
+import { cleanFixtures } from "./qa-clean";
 import { prisma, finish } from "./_cli";
 
 /**
@@ -26,6 +27,10 @@ function check(label: string, condition: boolean, detail = "") {
 }
 
 async function main() {
+  // A previous run killed partway through (piped to `head`, say) leaves its
+  // fixtures behind. Sweep before starting rather than trusting a finally.
+  await cleanFixtures();
+
   const email = "qa-leave@qa.fcsl.invalid";
   await prisma.user.deleteMany({ where: { email } });
 
