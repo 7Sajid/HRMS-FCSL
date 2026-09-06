@@ -23,10 +23,11 @@
     "qa:panel1": "tsx scripts/qa-panel1.ts",
     "qa:leave": "tsx scripts/qa-leave.ts",
     "qa:chain": "tsx scripts/qa-chain.ts",
-    "qa": "npm run qa:clean && npm run qa:leave && npm run qa:chain && npm run qa:exit",
+    "qa": "npm run qa:clean && npm run qa:leave && npm run qa:chain && npm run qa:exit && npm run qa:compliance",
     "qa:clean": "tsx scripts/qa-clean.ts",
     "qa:exit": "tsx scripts/qa-exit.ts",
-    "qa:import": "tsx scripts/qa-import.ts"
+    "qa:import": "tsx scripts/qa-import.ts",
+    "qa:compliance": "tsx scripts/qa-compliance.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.12.0",

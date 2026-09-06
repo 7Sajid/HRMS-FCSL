@@ -3,6 +3,7 @@ import { requireOpenPanel } from "@/lib/auth";
 import { navFor } from "@/components/nav-items";
 import { unreadBadge } from "@/lib/notifications";
 import { AppShell } from "@/components/AppShell";
+import { ShowCauseBanner } from "@/components/ShowCauseBanner";
 
 /**
  * The locked door plus the chrome, in one place.
@@ -26,6 +27,8 @@ export async function PanelLayout({ children }: { children: ReactNode }) {
         employeeId: context.employee?.employeeId ?? null,
       }}
     >
+      {/* §6.5: a red banner across their panel that does not go away. */}
+      <ShowCauseBanner employeeId={context.employeeId} />
       {children}
     </AppShell>
   );
