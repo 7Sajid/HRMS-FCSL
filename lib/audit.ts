@@ -122,6 +122,9 @@ export type AuditAction =
   // The system itself
   | "system.bootstrap_super_admin"
   | "system.cron_ran"
+  /** Installation-time checks written deliberately, so they are never mistaken
+   *  for the events they are testing. */
+  | "system.deployment_check"
   | "notification.email_failed";
 
 export const ACTION_LABELS: Record<AuditAction, string> = {
@@ -215,6 +218,7 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
 
   "system.bootstrap_super_admin": "First Super Admin created at installation",
   "system.cron_ran": "Scheduled job ran",
+  "system.deployment_check": "Installation check",
   "notification.email_failed": "Notification email failed",
 };
 
@@ -335,6 +339,7 @@ export const ACTION_GROUPS: { label: string; actions: AuditAction[] }[] = [
       "export.report",
       "system.bootstrap_super_admin",
       "system.cron_ran",
+      "system.deployment_check",
       "notification.email_failed",
     ],
   },

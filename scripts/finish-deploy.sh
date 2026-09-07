@@ -26,10 +26,10 @@
 #
 # OPTIONAL
 #
-#   POOLER_HOST   Defaults to aws-0-ap-south-1.pooler.supabase.com. Check it
-#                 against Supabase → Connect → Transaction pooler; Supabase has
-#                 shipped both aws-0- and aws-1- prefixes and the wrong one
-#                 fails to resolve rather than failing usefully.
+#   POOLER_HOST   Defaults to aws-0-ap-south-1.pooler.supabase.com, which is
+#                 the one this project answers on. Supabase has shipped both
+#                 aws-0- and aws-1- prefixes and BOTH resolve, so the wrong one
+#                 fails at authentication rather than at DNS.
 #
 #   ADMIN_PASSWORD  The first Super Admin's password. Defaults to the one in
 #                   the handover. Change it at first sign-in either way — a
@@ -57,13 +57,24 @@ ok() { printf '  \033[32m✓\033[0m %s\n' "$1"; }
 # "authentication failed" rather than "your password has an @ in it".
 ENCODED=$(python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$SUPABASE_DB_PASSWORD")
 
-DIRECT="postgresql://postgres:${ENCODED}@db.${PROJECT_REF}.supabase.co:5432/postgres"
+# Both go through the pooler, and that is not a shortcut.
+#
+# Supabase's true direct host, db.<ref>.supabase.co, is IPv6-only unless the
+# IPv4 add-on is bought — it has no A record at all, so on most networks it
+# fails as "Can't reach database server", which reads like the database is
+# down rather than like a missing feature. The SESSION pooler on 5432 is the
+# supported substitute: it holds a connection for the whole session, which is
+# what `prisma migrate` needs and what the transaction pooler cannot give.
+#
+# So: 6543 (transaction) for the application, 5432 (session) for migrations.
+DIRECT="postgresql://postgres.${PROJECT_REF}:${ENCODED}@${POOLER_HOST}:5432/postgres"
 POOLED="postgresql://postgres.${PROJECT_REF}:${ENCODED}@${POOLER_HOST}:6543/postgres?pgbouncer=true&connection_limit=5"
 
 # ---------------------------------------------------------------------------
 step "1 · Checking the database answers before changing anything"
 DATABASE_URL="$DIRECT" DIRECT_URL="$DIRECT" npx prisma migrate status >/dev/null 2>&1 || true
-if ! DATABASE_URL="$DIRECT" DIRECT_URL="$DIRECT" npx prisma db execute --stdin <<<'SELECT 1;' >/dev/null 2>&1; then
+if ! DATABASE_URL="$DIRECT" DIRECT_URL="$DIRECT" \
+     npx prisma db execute --schema prisma/schema.prisma --stdin <<<'SELECT 1;' >/dev/null 2>&1; then
   die "Could not connect with that password. Check it, or reset it in Supabase → Project Settings → Database."
 fi
 ok "connected to $PROJECT_REF"
@@ -78,17 +89,17 @@ step "3 · Proving the permanent record cannot be edited"
 # This is the claim the whole system's credibility rests on, and it is checked
 # against the REAL database rather than assumed from the migration having run.
 if DATABASE_URL="$DIRECT" DIRECT_URL="$DIRECT" \
-   npx prisma db execute --stdin <<<'UPDATE "AuditEvent" SET action = '"'"'x'"'"';' >/dev/null 2>&1; then
+   npx prisma db execute --schema prisma/schema.prisma --stdin <<<'UPDATE "AuditEvent" SET action = '"'"'x'"'"';' >/dev/null 2>&1; then
   die "UPDATE on AuditEvent SUCCEEDED. The append-only trigger is not installed. Stop and investigate."
 fi
 ok "UPDATE is refused"
 if DATABASE_URL="$DIRECT" DIRECT_URL="$DIRECT" \
-   npx prisma db execute --stdin <<<'DELETE FROM "AuditEvent";' >/dev/null 2>&1; then
+   npx prisma db execute --schema prisma/schema.prisma --stdin <<<'DELETE FROM "AuditEvent";' >/dev/null 2>&1; then
   die "DELETE on AuditEvent SUCCEEDED. Stop and investigate."
 fi
 ok "DELETE is refused"
 if DATABASE_URL="$DIRECT" DIRECT_URL="$DIRECT" \
-   npx prisma db execute --stdin <<<'TRUNCATE "AuditEvent";' >/dev/null 2>&1; then
+   npx prisma db execute --schema prisma/schema.prisma --stdin <<<'TRUNCATE "AuditEvent";' >/dev/null 2>&1; then
   die "TRUNCATE on AuditEvent SUCCEEDED. Stop and investigate."
 fi
 ok "TRUNCATE is refused"

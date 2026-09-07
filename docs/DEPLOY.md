@@ -1,9 +1,39 @@
 # Deploying FCSL HRM
 
-**Status: GitHub and Vercel are done. Two secrets remain.**
+**Status: everything is done except one key.**
 
 | | State |
 |---|---|
+| GitHub `sadmanfcsl/FCSL-HRM-Application` | ✅ pushed, private |
+| Vercel `fcsl-hrm-application` (team `fcsl`) | ✅ created, Git-linked, region `bom1` |
+| Supabase schema — 42 tables, 3 migrations | ✅ applied |
+| Append-only log — UPDATE / DELETE / TRUNCATE | ✅ **all three refused in production** |
+| Seed — 5 leave types, 6 settings, Fri+Sat weekly off, next ID `A 413` | ✅ |
+| First Super Admin | ✅ created |
+| `DATABASE_URL` · `DIRECT_URL` · `SESSION_SECRET` · `CRON_SECRET` · `SUPABASE_URL` · `SUPABASE_BUCKET` · `APP_URL` | ✅ set on Production |
+| `SUPABASE_SERVICE_ROLE_KEY` | ⛔ **the only thing missing** |
+| Storage bucket `hrm-documents` | ⛔ create it, PUBLIC OFF |
+| First deploy | ⛔ blocked on the key |
+
+`lib/storage.ts` throws at import time if storage is unconfigured on Vercel, so the build will fail until the key is set. That guard is deliberate and must not be relaxed: without it, uploads would silently fall back to local disk on a serverless filesystem, and every scanned NID would disappear at the next deploy.
+
+```bash
+printf '%s' 'YOUR_SERVICE_ROLE_KEY' | npx vercel env add SUPABASE_SERVICE_ROLE_KEY production --scope fcsl --force
+npx vercel deploy --prod --scope fcsl --yes
+```
+
+## A gotcha worth remembering
+
+**Supabase's direct host has no IPv4.** `db.<ref>.supabase.co` resolves to nothing on a v4-only network — `prisma migrate deploy` reports *"Can't reach database server"*, which reads like the database is down rather than like a missing add-on.
+
+Both URLs therefore go through the pooler, and that is not a workaround:
+
+- `DATABASE_URL` → **6543**, transaction pooler, `pgbouncer=true&connection_limit=5` — for the app
+- `DIRECT_URL` → **5432**, *session* pooler — for migrations, which need a connection held for the whole session
+
+Username is `postgres.<project-ref>`, not `postgres`. The host is `aws-0-ap-south-1.pooler.supabase.com`; `aws-1-` also resolves but rejects the credentials, so picking the wrong one fails at authentication rather than at DNS.
+
+---|---|
 | GitHub `sadmanfcsl/FCSL-HRM-Application` | ✅ pushed, private |
 | Vercel `fcsl-hrm-application` (team `fcsl`) | ✅ created, Git-linked, region `bom1` |
 | `SESSION_SECRET` · `CRON_SECRET` · `SUPABASE_URL` · `SUPABASE_BUCKET` · `APP_URL` | ✅ set on Production |
