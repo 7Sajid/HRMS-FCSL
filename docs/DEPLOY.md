@@ -1,8 +1,25 @@
 # Deploying FCSL HRM
 
-Three services, in this order: **GitHub** (the code), **Supabase** (the database and the files), **Vercel** (the app). The order matters — Vercel builds from GitHub and needs Supabase's URLs at build time, because `npm run build` runs `prisma migrate deploy`.
+**Status: GitHub and Vercel are done. Two secrets remain.**
 
-Everything below is a real command. Where a step needs a password or a browser login it says so, and says whose it is.
+| | State |
+|---|---|
+| GitHub `sadmanfcsl/FCSL-HRM-Application` | ✅ pushed, private |
+| Vercel `fcsl-hrm-application` (team `fcsl`) | ✅ created, Git-linked, region `bom1` |
+| `SESSION_SECRET` · `CRON_SECRET` · `SUPABASE_URL` · `SUPABASE_BUCKET` · `APP_URL` | ✅ set on Production |
+| Supabase project `FCSL-HRM-Application` | ✅ exists, healthy, empty |
+| `DATABASE_URL` · `DIRECT_URL` · `SUPABASE_SERVICE_ROLE_KEY` | ⛔ need the database password and the service_role key |
+| Migrations · seed · first deploy | ⛔ blocked on the above |
+
+Everything still outstanding is one command:
+
+```bash
+SUPABASE_DB_PASSWORD='…' SUPABASE_SERVICE_ROLE_KEY='…' bash scripts/finish-deploy.sh
+```
+
+It connects, migrates, **proves the audit log refuses UPDATE, DELETE and TRUNCATE against the real database**, seeds the first Super Admin, hands the two secrets to Vercel, and deploys. It refuses to start if either secret is missing, and stops loudly if the append-only trigger is not in place.
+
+The rest of this document is the reference for what that script does and why, and for the parts still done by hand.
 
 ---
 
