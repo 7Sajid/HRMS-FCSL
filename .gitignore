@@ -16,3 +16,10 @@ build
 *.tsbuildinfo
 .vercel
 coverage
+
+# Added by `vercel link`, broadened deliberately: every .env variant stays out,
+# INCLUDING .vercel/.env.* pulls. The one exception is .env.example, which
+# documents the shape and must stay in the repo — without the negation below a
+# fresh clone would silently lose it.
+.env*
+!.env.example
