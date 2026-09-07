@@ -89,7 +89,15 @@ And one that is absolute: **nobody at any level can read somebody else's private
 
 Foundation first, then one panel at a time, bottom-up: **Employee/RM → Manager → HR Executive → HR Head → Super Admin**. Each panel is finished and deployed before the next begins.
 
-Accounts and the locked door are HR Executive jobs that only arrive at Panel 3, so `scripts/create-account.ts` and `scripts/approve-joiner.ts` do them from the terminal until then. Those scripts are permanent ops tools, not scaffolding — they are how you recover when a screen is broken at nine in the evening.
+Accounts and the locked door are HR Executive jobs that only arrive at Panel 3, so `scripts/create-account.ts` and `scripts/approve-joiner.ts` do them from the terminal until then. Those scripts are permanent ops tools, not scaffolding — they are how you recover when a screen is broken at nine in the evening. `scripts/run-job.ts` joins them at Panel 5: it runs any scheduled job by hand, and `--on YYYY-MM-DD` moves the date the job *thinks* it is, so the certificate ladder can be checked without waiting four months for it.
+
+## The scheduled jobs (§8)
+
+`lib/jobs.ts`, called by `app/api/cron` on one daily Vercel Cron at 02:00 UTC — eight in the morning in Dhaka, because §8 asks for a *morning* summary. One schedule, not six: `runJobs` already orders them with the digest last.
+
+Every job is **idempotent within a day**. `ReminderState` records what has already been said about each subject, so a Vercel retry, an overlapping deploy or somebody running it by hand does not send a second email. A warning that arrives twice is a warning people start deleting, which is the failure the register exists to prevent arriving by another route.
+
+`CRON_SECRET` unset means the endpoint 404s and nothing runs. That is deliberate — see `.env.example`.
 
 ## Local development
 

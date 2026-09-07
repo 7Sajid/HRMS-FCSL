@@ -1274,3 +1274,38 @@ model Setting {
   updatedByName String   @default("")
   updatedAt     DateTime @updatedAt @db.Timestamptz(3)
 }
+
+/// What the scheduled jobs have already said, so saying it again needs a
+/// reason (§8, §12.2).
+///
+/// The certificate ladder is deliberately uneven — four months out it speaks
+/// once a month, in the final month once a week, and after expiry weekly until
+/// somebody resolves it. Without a memory the nightly job would send every
+/// rung every night, and a warning that arrives daily is a warning people
+/// filter into a folder. That is the exact failure the certificate register
+/// exists to prevent, arriving by a different route.
+///
+/// Keyed by what the reminder is ABOUT rather than by who received it: the
+/// question the job asks is "has this certificate been warned about today",
+/// not "has Karim been emailed". One row per subject, overwritten in place —
+/// this is working state, not a record of anything, and the permanent record
+/// already holds every send.
+model ReminderState {
+  /// "certificate:<certificateId>", "attendance:<branchId>:2026-09",
+  /// "escalation:<requisitionId>", "uploads:<employeeId>".
+  key String @id
+
+  /// The Dhaka calendar date, so "already sent today" is a date comparison and
+  /// not an instant one six hours out.
+  lastSentOn DateTime @db.Date
+  /// Which rung of the ladder, so the wording can change without re-sending.
+  lastRung   String   @default("")
+  /// How many times in total. Read by nobody yet; written because "how long
+  /// has this been shouting" is the first question anybody asks about a
+  /// warning that was ignored.
+  sentCount  Int      @default(0)
+
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([lastSentOn])
+}

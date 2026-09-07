@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireCapability } from "@/lib/auth";
+import { canReviewOnboardingOf } from "@/lib/permissions";
 import { formatDateTime, todayInDhaka, workingDaysSince } from "@/lib/dates";
 import { loadOnboardingState } from "@/lib/onboarding";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
@@ -18,14 +19,21 @@ export const metadata = { title: "Joiners · FCSL HR" };
  * mitigation for that cost.
  */
 export default async function Page() {
-  await requireCapability("documents.approve");
+  const context = await requireCapability("documents.approve");
   const today = todayInDhaka();
 
-  const waiting = await prisma.employee.findMany({
+  const everyone = await prisma.employee.findMany({
     where: { onboardingStatus: { in: ["SUBMITTED", "SENT_BACK", "DRAFT"] } },
     include: { user: { select: { email: true, role: true, tempPasswordExpiresAt: true } } },
     orderBy: [{ submittedAt: "asc" }, { createdAt: "asc" }],
   });
+
+  // The HR Head's own file belongs to the Super Admin (§3). Listing it here
+  // for an HR Executive would put a row on screen that 404s when clicked, so
+  // it is removed — but the COUNT stays, because a file silently missing from
+  // a queue is how somebody waits three weeks with nobody wondering why.
+  const waiting = everyone.filter((w) => canReviewOnboardingOf(context.viewer, w.user.role));
+  const elsewhere = everyone.length - waiting.length;
 
   const submitted = waiting.filter((w) => w.onboardingStatus === "SUBMITTED");
   const sentBack = waiting.filter((w) => w.onboardingStatus === "SENT_BACK");
@@ -41,7 +49,11 @@ export default async function Page() {
     <main className="mx-auto max-w-5xl px-6 py-10">
       <PageHeader
         title="Joiners"
-        subtitle="People waiting to get through the locked door. Their panel opens when you approve them."
+        subtitle={
+          elsewhere === 0
+            ? "People waiting to get through the locked door. Their panel opens when you approve them."
+            : `People waiting to get through the locked door. ${elsewhere} more ${elsewhere === 1 ? "file is" : "files are"} with the Super Admin.`
+        }
         actions={<ButtonLink href="/hr/accounts/new" variant="primary">Create an account</ButtonLink>}
       />
 

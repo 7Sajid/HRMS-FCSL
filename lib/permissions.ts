@@ -256,6 +256,30 @@ export function canReadDocumentsOf(viewer: Viewer, ownerEmployeeId: string, self
   return can(viewer, "documents.readAny");
 }
 
+/**
+ * Who may review somebody's onboarding file (§3, and the §7.3 table).
+ *
+ * "The person uploads → HR Executive or HR Head approves. Done. THE EXCEPTION
+ * IS THE HR HEAD'S OWN DOCUMENTS, WHICH GO TO THE SUPER ADMIN."
+ *
+ * This asks the question for the WHOLE review, not only for the final Approve
+ * button. An HR Executive who could open the HR Head's file, read their NID
+ * and reject their documents one at a time — but not press the last button —
+ * would have defeated the separation while appearing to respect it. §5.3 puts
+ * records with the HR Executive and decisions with the HR Head precisely so
+ * that nobody checks the work of the person who checks theirs.
+ *
+ * The Super Admin's own file is covered by the same clause. Nobody above them
+ * exists, so in practice their record is created at installation.
+ */
+export function canReviewOnboardingOf(viewer: Viewer, subjectRole: Role): boolean {
+  if (!can(viewer, "documents.approve")) return false;
+  if (subjectRole === "HR_HEAD" || subjectRole === "SUPER_ADMIN") {
+    return can(viewer, "accounts.manage");
+  }
+  return true;
+}
+
 /** §9 row 5. Their own, always; anybody else's needs the capability. */
 export function canReadBankDetailsOf(viewer: Viewer, ownerEmployeeId: string, selfEmployeeId: string | null): boolean {
   if (selfEmployeeId && ownerEmployeeId === selfEmployeeId) return true;

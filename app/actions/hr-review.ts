@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { currentIp, getSessionContext } from "@/lib/auth";
 import { actorFrom, changedFields, record } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
-import { can } from "@/lib/permissions";
+import { can, canReviewOnboardingOf } from "@/lib/permissions";
 import { allocateEmployeeId, employeeIdIsTaken, parseEmployeeId } from "@/lib/employee-id";
 import { loadOnboardingState } from "@/lib/onboarding";
 import { ensureEntitlements } from "@/lib/leave-service";
@@ -27,9 +27,12 @@ export async function reviewDocument(
 
   const document = await prisma.employeeDocument.findUnique({
     where: { id: documentId },
-    include: { employee: true },
+    include: { employee: { include: { user: { select: { role: true } } } } },
   });
   if (!document) return { error: "Not found." };
+  if (!canReviewOnboardingOf(context.viewer, document.employee.user.role)) {
+    return { error: "Not found." };
+  }
 
   const written = reason.trim().slice(0, 500);
   // The reason is what reopens the box on the joiner's screen and tells them
@@ -161,6 +164,7 @@ export async function sendBack(employeeId: string, note: string): Promise<Review
     include: { user: true, documents: { where: { status: "REJECTED", supersededAt: null } } },
   });
   if (!employee) return { error: "Not found." };
+  if (!canReviewOnboardingOf(context.viewer, employee.user.role)) return { error: "Not found." };
   if (!employee.documents.length) {
     return { error: "Mark at least one document as wrong first — otherwise they cannot tell what to fix." };
   }
@@ -249,12 +253,10 @@ export async function approveJoiner(
   if (!employee) return { error: "Not found." };
   if (employee.onboardingStatus === "APPROVED") return { error: "This file is already approved." };
 
-  // §3: the HR Head's own documents go to the Super Admin. An HR Executive
-  // cannot open the door for the person who checks their work.
-  if (
-    (employee.user.role === "HR_HEAD" || employee.user.role === "SUPER_ADMIN") &&
-    !can(context.viewer, "accounts.manage")
-  ) {
+  // §3: the HR Head's own documents go to the Super Admin. Asked of
+  // lib/permissions.ts rather than compared here, so the page guard, the
+  // per-document review and this final button cannot answer it differently.
+  if (!canReviewOnboardingOf(context.viewer, employee.user.role)) {
     return { error: "Only the Super Admin approves an HR Head's documents." };
   }
 

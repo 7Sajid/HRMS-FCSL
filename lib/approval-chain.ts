@@ -78,12 +78,25 @@ export function everyApproverRole(applicantRole: Role): readonly Role[] {
   return LEAVE_CHAIN[applicantRole] ?? [];
 }
 
-/** "Waiting with your manager", for the applicant's own screen. */
-export function waitingWith(approver: Role | null, applicantRole: Role): string {
+/**
+ * "Waiting with your manager" — or with THEIR manager, depending on who is
+ * reading it.
+ *
+ * The same sentence appears on the applicant's own page and on the Super
+ * Admin's overview of everything in flight, and only the pronoun differs. One
+ * function with a voice rather than two functions: the second copy is where
+ * somebody eventually adds a chain step that the first copy never hears about.
+ */
+export function waitingWith(
+  approver: Role | null,
+  applicantRole: Role,
+  voice: "self" | "other" = "self",
+): string {
   if (!approver) return "Finished";
-  if (approver === "MANAGER") return "Waiting with your manager";
-  if (approver === "HR_HEAD") return "Waiting with the HR Head";
-  if (approver === "SUPER_ADMIN") return "Waiting with the Super Admin";
+  if (approver === "MANAGER") return voice === "self" ? "Waiting with your manager" : "With their manager";
+  if (approver === "HR_HEAD") return voice === "self" ? "Waiting with the HR Head" : "With the HR Head";
+  if (approver === "SUPER_ADMIN")
+    return voice === "self" ? "Waiting with the Super Admin" : "With the Super Admin";
   void applicantRole;
   return "Waiting";
 }

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireCapability } from "@/lib/auth";
-import { can } from "@/lib/permissions";
+import { can, canReviewOnboardingOf } from "@/lib/permissions";
 import { documentLabel } from "@/lib/documents";
 import { loadOnboardingState } from "@/lib/onboarding";
 import { formatEmployeeId } from "@/lib/employee-id";
@@ -27,6 +27,10 @@ export default async function Page({ params }: Props) {
     },
   });
   if (!employee) notFound();
+  // 404 rather than 403: an HR Executive who is refused a file should not be
+  // told the file is interesting. The HR Head's own documents are the Super
+  // Admin's to review (§3), and that has to hold when the URL is typed.
+  if (!canReviewOnboardingOf(context.viewer, employee.user.role)) notFound();
 
   const [state, sequence, branches, departments, designations, grades, managers] = await Promise.all([
     loadOnboardingState(employee),
