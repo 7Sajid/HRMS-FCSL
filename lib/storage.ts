@@ -28,6 +28,24 @@ export function usingCloudStorage(): boolean {
   return supabase() !== null;
 }
 
+/**
+ * Both headers, always.
+ *
+ * Supabase has two generations of server-side key and they authenticate
+ * differently. The legacy `service_role` key is a JWT and `Authorization:
+ * Bearer` alone is enough. The current `sb_secret_…` key is NOT a JWT, and
+ * sending it as a bare bearer token makes the storage API try to parse it as
+ * one — the reply is `403 Invalid Compact JWS`, and on some routes it surfaces
+ * as `404 Bucket not found`, which sends you looking for a missing bucket that
+ * is sitting right there.
+ *
+ * Sending `apikey` as well satisfies both generations, so the project can be
+ * rotated from one to the other without touching this file.
+ */
+function authHeaders(key: string): Record<string, string> {
+  return { apikey: key, authorization: `Bearer ${key}` };
+}
+
 // Vercel's filesystem is wiped on every deploy, so uploads written to disk
 // there would be lost — silently, and only noticed when an auditor asks for a
 // staff file. Fail at import rather than at the first upload.
@@ -71,7 +89,7 @@ export async function putObject(key: string, bytes: Uint8Array, contentType: str
   const response = await fetch(`${config.url}/storage/v1/object/${config.bucket}/${key}`, {
     method: "POST",
     headers: {
-      authorization: `Bearer ${config.key}`,
+      ...authHeaders(config.key),
       "content-type": contentType,
       "x-upsert": "true",
     },
@@ -93,7 +111,7 @@ export async function getObject(key: string): Promise<Uint8Array | null> {
   }
 
   const response = await fetch(`${config.url}/storage/v1/object/${config.bucket}/${key}`, {
-    headers: { authorization: `Bearer ${config.key}` },
+    headers: authHeaders(config.key),
   });
   if (!response.ok) return null;
   return new Uint8Array(await response.arrayBuffer());
@@ -111,7 +129,7 @@ export async function deleteObject(key: string): Promise<void> {
   }
   await fetch(`${config.url}/storage/v1/object/${config.bucket}/${key}`, {
     method: "DELETE",
-    headers: { authorization: `Bearer ${config.key}` },
+    headers: authHeaders(config.key),
   }).catch(() => {});
 }
 
