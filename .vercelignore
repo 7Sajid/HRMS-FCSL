@@ -1,0 +1,21 @@
+# What must never be uploaded to a build.
+#
+# `vercel deploy` from a laptop does NOT read .gitignore, so without this file
+# the local .env goes up with the source. That is how a build ends up reading a
+# developer's DATABASE_URL: prisma.config.ts calls dotenv, dotenv fills any
+# variable the platform has not set, and the build quietly points at
+# localhost — or worse, at a database that does exist and is the wrong one.
+.env
+.env.*
+!.env.example
+
+# Scanned NIDs and bank details in the local development fallback.
+storage
+
+# Nothing here belongs in a build.
+node_modules
+.next
+coverage
+*.tsbuildinfo
+docs
+scripts/qa-*.ts
