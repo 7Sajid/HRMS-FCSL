@@ -18,6 +18,9 @@ export default async function Page() {
       where: { closedAt: null },
       include: { employee: { select: { fullName: true, employeeId: true } } },
       orderBy: { issuedAt: "asc" },
+      // Rule 7. Open show-causes should never be many; a cap costs nothing and
+      // stops one bad month from being an unloadable page.
+      take: 500,
     }),
     prisma.showCause.findMany({
       where: { closedAt: { not: null } },

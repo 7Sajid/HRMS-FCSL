@@ -1,5 +1,5 @@
 import type { LeaveDayKind } from "@prisma/client";
-import { calendarDate, dayKind, eachDate, toISODate, type HolidaySet } from "./dates";
+import { calendarDate, dayKind, eachDate, formatDate, toISODate, type HolidaySet } from "./dates";
 
 /**
  * Leave arithmetic (§6.2).
@@ -146,6 +146,71 @@ export function computeBalance(
   };
 }
 
+/**
+ * Who a leave type is for (§6.2).
+ *
+ * Maternity leave is why this exists: 112 days of it were offered to every
+ * employee in the company, men included, because nothing asked the question.
+ *
+ * The answer is read from the type's own `appliesTo` column rather than from
+ * its code, because §12 settles that leave types are the HR Head's to
+ * configure and are never hardcoded — FCSL may add paternity leave next year
+ * and nobody should have to edit this file.
+ */
+export type Audience = "ALL" | "FEMALE" | "MALE";
+
+export function normaliseGender(value: string): "FEMALE" | "MALE" | null {
+  // HR types this by hand into a free-text field, so it arrives as "Female",
+  // "female", "F", "M", "Male" and occasionally blank.
+  const text = value.trim().toLowerCase();
+  if (!text) return null;
+  if (text.startsWith("f") || text === "woman" || text === "w") return "FEMALE";
+  if (text.startsWith("m")) return "MALE";
+  return null;
+}
+
+export function audienceIncludes(appliesTo: Audience | null | undefined, gender: string): boolean {
+  // Anything but a value we recognise means everybody.
+  //
+  // Not defensive programming for its own sake: this filter decides whether a
+  // leave type appears AT ALL, so a value that matches nothing removes every
+  // type from the screen and the person cannot apply for leave. Found exactly
+  // that way — a running server holding a Prisma client generated before the
+  // column existed read `appliesTo` as undefined, and the leave page said "HR
+  // has not set up any leave types yet". Failing towards showing is the only
+  // safe direction here.
+  if (appliesTo !== "FEMALE" && appliesTo !== "MALE") return true;
+  const recorded = normaliseGender(gender);
+  // Nothing recorded: offer it anyway.
+  //
+  // The two mistakes are not the same size. Hiding maternity leave from a
+  // woman because nobody typed her gender into her record denies a statutory
+  // entitlement and she may never find out why it is missing. Offering it to a
+  // man whose record is equally blank is an embarrassment on a dropdown. So
+  // the doubt resolves towards offering, and the fix for the embarrassment is
+  // to fill the record in.
+  if (!recorded) return true;
+  return recorded === appliesTo;
+}
+
+/**
+ * Is this type counted against a balance at all?
+ *
+ * Leave without pay is nought days by definition and is deliberately allowed
+ * to exceed that — the seed comment says so: "Zero entitlement by definition,
+ * so it must be allowed to exceed it." Those two facts together mean it is not
+ * an entitlement, it is a reason attached to an absence.
+ *
+ * Treating it as one produced "Leave without pay — -1 days left" on screen and
+ * "you have -1 left, 1 more than the balance" in a warning. Neither is a
+ * sentence about anything. Derived from the rule rather than from the code
+ * "UNPAID", because §12 settles that leave types are configured by the HR Head
+ * and never hardcoded — any type they set up this way behaves the same.
+ */
+export function isUncounted(entitled: number, overBalance: "REFUSE" | "WARN"): boolean {
+  return entitled === 0 && overBalance === "WARN";
+}
+
 function round(value: number): number {
   // Leave is counted in half days; floating point should never leak a
   // 9.999999999 into a sentence a person reads.
@@ -219,6 +284,8 @@ export type PreflightInput = {
   overlappingDates: ReadonlySet<string>;
   attachmentRequiredAfterDays: number | null;
   hasAttachment: boolean;
+  /** True for a type that is not counted against a balance — see isUncounted. */
+  uncounted: boolean;
   /** How many of this person's team are already away on any of these dates. */
   teamAwayCount: number;
   teamSize: number;
@@ -249,7 +316,12 @@ export function preflight(input: PreflightInput): Preflight {
   }
 
   // 2 — Enough days of that type left?
-  if (cost > input.balance.applicable) {
+  //
+  // Skipped entirely for a type that has no balance to be short of. It used to
+  // fall through to the WARN branch and tell somebody applying for one day of
+  // unpaid leave that they were "1 more than the balance", which reads as a
+  // problem with their application rather than as the definition of the type.
+  if (!input.uncounted && cost > input.balance.applicable) {
     const short = round(cost - input.balance.applicable);
     const message =
       `This costs ${cost} day${cost === 1 ? "" : "s"} and you have ${input.balance.applicable} left` +
@@ -267,7 +339,10 @@ export function preflight(input: PreflightInput): Preflight {
   );
   if (clash) {
     errors.push(
-      `You have already applied for leave on ${toISODate(clash.date)}. Withdraw that one first.`,
+      // Written the way the rest of the system writes a date. The ISO form is
+      // for the Set lookup above and for URLs, not for a sentence somebody
+      // reads.
+      `You have already applied for leave on ${formatDate(clash.date)}. Withdraw that one first.`,
     );
   }
 

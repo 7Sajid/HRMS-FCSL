@@ -10,6 +10,9 @@ import { actionLabel } from "@/lib/audit";
 import { auditWhere, readFilters } from "@/lib/audit-query";
 import { ROLE_LABELS } from "@/lib/permissions";
 
+/** Rule 7: every list is capped, exports included. Well above FCSL's 412. */
+const EXPORT_CAP = 5000;
+
 /**
  * Exports.
  *
@@ -75,7 +78,7 @@ async function exportEmployees(context: Context, url: URL): Promise<Response> {
       bankDetail: canReadBankDetailsOf(context.viewer, "", null),
     },
     orderBy: [{ idNumber: "asc" }, { fullName: "asc" }],
-    take: 5000,
+    take: EXPORT_CAP,
   });
 
   const withBank = canReadBankDetailsOf(context.viewer, "", null);
@@ -150,6 +153,10 @@ async function exportCertificates(context: Context, url: URL): Promise<Response>
     where: { status: "ACTIVE" },
     include: { employee: { include: { branch: true } } },
     orderBy: { expiryDate: "asc" },
+    // The same cap the employee export has carried all along. An export is a
+    // file somebody downloads; it must not be the one request that can ask the
+    // database for everything at once.
+    take: EXPORT_CAP,
   });
 
   const headers = [

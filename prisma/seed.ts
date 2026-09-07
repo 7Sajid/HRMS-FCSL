@@ -55,6 +55,9 @@ const LEAVE_TYPES = [
     sortOrder: 4,
     days: 112,
     carryForward: false,
+    // Labour Act 2006 s.46 gives this to women. Without it the type was
+    // offered to every employee in the company.
+    appliesTo: "FEMALE" as const,
     note: "Labour Act 2006 s.46 — 16 weeks.",
   },
   {
@@ -133,8 +136,16 @@ async function main() {
   for (const type of LEAVE_TYPES) {
     const leaveType = await prisma.leaveType.upsert({
       where: { code: type.code },
+      // Never clobbered on a re-run: who a leave type is for is the HR Head's
+      // setting once the system is live. Existing installations are corrected
+      // once, by the data migration beside the column that added it.
       update: {},
-      create: { code: type.code, name: type.name, sortOrder: type.sortOrder },
+      create: {
+        code: type.code,
+        name: type.name,
+        sortOrder: type.sortOrder,
+        appliesTo: "appliesTo" in type ? type.appliesTo : "ALL",
+      },
     });
 
     const effectiveFrom = new Date(Date.UTC(2000, 0, 1));

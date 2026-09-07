@@ -731,10 +731,24 @@ model CalendarEvent {
 // half-days, partial cancellation or accurate balances. This one can.
 // ===========================================================================
 
+/// Who a leave type is for (§6.2). Maternity leave is the case that forced
+/// this: 112 days of it were being offered to every employee in the company.
+/// A column rather than a check on the code "MATERNITY", because §12 settles
+/// that leave types are the HR Head's to configure and are never hardcoded.
+enum LeaveAudience {
+  ALL
+  FEMALE
+  MALE
+}
+
 model LeaveType {
   id        String    @id @default(cuid())
   name      String
   code      String    @unique
+  /// Not dated, unlike daysPerYear. Who a type is for is a property of the
+  /// type; the DAYS are what changes from year to year and must still compute
+  /// on last year's rule.
+  appliesTo LeaveAudience @default(ALL)
   /// Retired, never deleted — historic leave still points at it.
   retiredAt DateTime? @db.Timestamptz(3)
   sortOrder Int       @default(0)

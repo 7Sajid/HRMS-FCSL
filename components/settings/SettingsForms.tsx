@@ -10,10 +10,68 @@ import {
   saveLeaveRule,
   saveOrgItem,
   saveSetting,
+  setLeaveTypeAudience,
 } from "@/app/actions/hr-settings";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { ErrorBox } from "@/components/ui/Feedback";
+
+const AUDIENCES = [
+  { value: "ALL", label: "Everybody" },
+  { value: "FEMALE", label: "Women only" },
+  { value: "MALE", label: "Men only" },
+] as const;
+
+/**
+ * §6.2 — who a leave type is offered to.
+ *
+ * Maternity leave was being offered to every employee in the company. This is
+ * a setting rather than a rule about the code "MATERNITY", because §12 puts
+ * leave types in the HR Head's hands and FCSL may add paternity leave next.
+ */
+export function LeaveAudienceForm({
+  leaveTypeId,
+  current,
+}: {
+  leaveTypeId: string;
+  current: "ALL" | "FEMALE" | "MALE";
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState("");
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="text-xs text-ink-500" htmlFor={`audience-${leaveTypeId}`}>
+        Offered to
+      </label>
+      <Select
+        id={`audience-${leaveTypeId}`}
+        className="w-auto py-1.5 text-xs"
+        defaultValue={current}
+        disabled={pending}
+        onChange={(event) => {
+          const value = event.target.value as "ALL" | "FEMALE" | "MALE";
+          start(async () => {
+            const result = await setLeaveTypeAudience(leaveTypeId, value);
+            if (result && "error" in result) setError(result.error);
+            else {
+              setError("");
+              router.refresh();
+            }
+          });
+        }}
+      >
+        {AUDIENCES.map((a) => (
+          <option key={a.value} value={a.value}>
+            {a.label}
+          </option>
+        ))}
+      </Select>
+      {error && <span className="text-xs text-red-600">{error}</span>}
+    </div>
+  );
+}
 
 export function LeaveRuleForm({
   leaveTypeId,

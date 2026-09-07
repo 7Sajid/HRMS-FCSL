@@ -40,6 +40,46 @@ const ruleSchema = z.object({
   attachmentRequiredAfterDays: z.string().trim().optional().default(""),
 });
 
+/**
+ * Who a leave type is for (§6.2).
+ *
+ * Not a dated rule, unlike the days: the days change from year to year and
+ * last year's leave must keep computing on last year's number, whereas who a
+ * type is for is a property of the type itself. Audited like every other
+ * change to a leave type, because it decides who is offered a statutory
+ * entitlement.
+ */
+export async function setLeaveTypeAudience(
+  leaveTypeId: string,
+  appliesTo: "ALL" | "FEMALE" | "MALE",
+): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+
+  const type = await prisma.leaveType.findUnique({ where: { id: leaveTypeId } });
+  if (!type) return { error: "Unknown leave type." };
+  if (type.appliesTo === appliesTo) return { ok: true };
+
+  const actorName = context.employee?.fullName ?? context.user.email;
+  await prisma.$transaction(async (tx) => {
+    await tx.leaveType.update({ where: { id: leaveTypeId }, data: { appliesTo } });
+    await record({
+      action: "leavetype.rule_added",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "leaveType",
+      targetId: type.id,
+      targetLabel: type.name,
+      detail: { appliesTo: { from: type.appliesTo, to: appliesTo } },
+      ip: await currentIp(),
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  return { ok: true };
+}
+
 export async function saveLeaveRule(_previous: unknown, formData: FormData): Promise<SettingsResult> {
   const guard = await requireHrHead();
   if (!guard.ok) return { error: guard.error };
@@ -118,7 +158,18 @@ export async function createLeaveType(_previous: unknown, formData: FormData): P
   const actorName = context.employee?.fullName ?? context.user.email;
   await prisma.$transaction(async (tx) => {
     const count = await tx.leaveType.count();
-    const type = await tx.leaveType.create({ data: { name, code, sortOrder: count + 1 } });
+    const type = await tx.leaveType.create({
+      data: {
+        name,
+        code,
+        sortOrder: count + 1,
+        appliesTo: (["ALL", "FEMALE", "MALE"] as const).includes(
+          String(formData.get("appliesTo")) as never,
+        )
+          ? (String(formData.get("appliesTo")) as "ALL" | "FEMALE" | "MALE")
+          : "ALL",
+      },
+    });
     await tx.leaveTypeRule.create({
       data: {
         leaveTypeId: type.id,

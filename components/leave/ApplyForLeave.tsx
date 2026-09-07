@@ -14,6 +14,8 @@ export type TypeOption = {
   available: number;
   pending: number;
   attachmentRequiredAfterDays: number | null;
+  /** Leave without pay: no entitlement, and none is expected. */
+  uncounted: boolean;
 };
 
 /**
@@ -77,7 +79,7 @@ export function ApplyForLeave({
 
   const type = types.find((t) => t.id === typeId);
   const late = Boolean(from && from < today);
-  const overBalance = Boolean(type && cost && cost.working > type.applicable);
+  const overBalance = Boolean(type && !type.uncounted && cost && cost.working > type.applicable);
   const needsCertificate = Boolean(
     type?.attachmentRequiredAfterDays !== null &&
       type?.attachmentRequiredAfterDays !== undefined &&
@@ -97,7 +99,8 @@ export function ApplyForLeave({
         >
           {types.map((t) => (
             <option key={t.id} value={t.id}>
-              {t.name} — {t.applicable} day{t.applicable === 1 ? "" : "s"} left
+              {t.name}
+              {t.uncounted ? "" : ` — ${t.applicable} day${t.applicable === 1 ? "" : "s"} left`}
             </option>
           ))}
         </Select>
@@ -121,10 +124,18 @@ export function ApplyForLeave({
             </strong>{" "}
             Fridays, Saturdays and public holidays are not counted.
           </p>
-          {type && (
+          {type && !type.uncounted && (
             <p className="mt-1">
               You have {type.applicable} day{type.applicable === 1 ? "" : "s"} of {type.name.toLowerCase()} left
               {type.pending > 0 ? ` (${type.pending} already applied for and waiting)` : ""}.
+            </p>
+          )}
+          {type?.uncounted && (
+            // No entitlement by definition, so there is no number to quote and
+            // nothing to be short of.
+            <p className="mt-1">
+              {type.name} is not counted against a balance. It is recorded so the absence has a
+              reason attached to it.
             </p>
           )}
           <p className="mt-1">This goes to {goesTo} first.</p>

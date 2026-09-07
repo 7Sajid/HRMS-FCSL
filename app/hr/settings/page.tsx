@@ -6,6 +6,7 @@ import { Card, PageHeader } from "@/components/ui/Card";
 import { Badge, NoticeBox } from "@/components/ui/Feedback";
 import {
   HolidayForm,
+  LeaveAudienceForm,
   LeaveRuleForm,
   NewLeaveTypeForm,
   OrgListForm,
@@ -106,6 +107,10 @@ export default async function Page() {
                       {current.carryForward ? " · carries forward" : ""}
                     </span>
                   )}
+                </div>
+
+                <div className="mb-3">
+                  <LeaveAudienceForm leaveTypeId={type.id} current={type.appliesTo} />
                 </div>
 
                 <LeaveRuleForm

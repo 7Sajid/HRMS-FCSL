@@ -74,11 +74,24 @@ export default async function Page() {
         {types.map((type) => (
           <Card key={type.id} className="p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-ink-400">{type.name}</p>
-            <p className="mt-1 text-2xl font-bold tabular text-ink-900">{type.balance.applicable}</p>
-            <p className="text-xs text-ink-500">
-              of {type.balance.entitled} left
-              {type.balance.pending > 0 ? ` · ${type.balance.pending} waiting` : ""}
-            </p>
+            {type.uncounted ? (
+              // No entitlement by definition, so there is no number to show.
+              // It used to read "-1" the moment somebody applied for a day.
+              <>
+                <p className="mt-1 text-2xl font-bold text-ink-400">&mdash;</p>
+                <p className="text-xs text-ink-500">Not counted against a balance</p>
+              </>
+            ) : (
+              <>
+                <p className="mt-1 text-2xl font-bold tabular text-ink-900">
+                  {type.balance.applicable}
+                </p>
+                <p className="text-xs text-ink-500">
+                  of {type.balance.entitled} left
+                  {type.balance.pending > 0 ? ` · ${type.balance.pending} waiting` : ""}
+                </p>
+              </>
+            )}
           </Card>
         ))}
       </section>
@@ -94,6 +107,7 @@ export default async function Page() {
                 applicable: t.balance.applicable,
                 available: t.balance.available,
                 pending: t.balance.pending,
+                uncounted: t.uncounted,
                 attachmentRequiredAfterDays: t.attachmentRequiredAfterDays,
               }))}
               goesTo={goesTo === "Finished" ? "nobody — it is recorded directly" : goesTo}

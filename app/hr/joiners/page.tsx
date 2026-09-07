@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireCapability } from "@/lib/auth";
 import { canReviewOnboardingOf } from "@/lib/permissions";
 import { formatDateTime, todayInDhaka, workingDaysSince } from "@/lib/dates";
-import { loadOnboardingState } from "@/lib/onboarding";
+import { progressLabels } from "@/lib/onboarding";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
 import { ButtonLink } from "@/components/ui/Button";
@@ -26,6 +26,9 @@ export default async function Page() {
     where: { onboardingStatus: { in: ["SUBMITTED", "SENT_BACK", "DRAFT"] } },
     include: { user: { select: { email: true, role: true, tempPasswordExpiresAt: true } } },
     orderBy: [{ submittedAt: "asc" }, { createdAt: "asc" }],
+    // Rule 7, and longest-waiting first, so the cap keeps the people who have
+    // been kept behind the locked door the longest.
+    take: 500,
   });
 
   // The HR Head's own file belongs to the Super Admin (§3). Listing it here
@@ -39,11 +42,8 @@ export default async function Page() {
   const sentBack = waiting.filter((w) => w.onboardingStatus === "SENT_BACK");
   const notStarted = waiting.filter((w) => w.onboardingStatus === "DRAFT");
 
-  const progress = new Map<string, string>();
-  for (const person of notStarted) {
-    const state = await loadOnboardingState(person);
-    progress.set(person.id, state.progress.label);
-  }
+  // Three queries for the whole list, not three per person.
+  const progress = await progressLabels(notStarted);
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">

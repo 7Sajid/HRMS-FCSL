@@ -50,7 +50,7 @@ export function EmployeeFilters({
   };
 
   return (
-    <aside className="space-y-4">
+    <aside className="min-w-0 space-y-4">
       <Field label="Search" htmlFor="q" hint="Name, employee ID, email or mobile.">
         <Input id="q" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Karim, A 413…" />
       </Field>

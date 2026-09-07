@@ -85,7 +85,7 @@ export default async function Page({ searchParams }: Props) {
         subtitle="Holidays, your weekly off, your own leave — and a notepad only you can read."
       />
 
-      <div className="grid gap-6 lg:grid-cols-[1fr_20rem]">
+      <div className="grid gap-6 lg:grid-cols-[1fr_20rem] [&>*]:min-w-0">
         <div>
           <Card className="p-5">
             <div className="mb-4 flex items-center justify-between">

@@ -100,6 +100,59 @@ export async function loadOnboardingState(employee: Employee): Promise<Onboardin
   };
 }
 
+/**
+ * Just the progress line, for a list of people, in three queries.
+ *
+ * The joiners queue printed "6 of 9 required documents uploaded" beside every
+ * person who had not submitted yet, and called `loadOnboardingState` to get
+ * it — three queries each. On the morning after the 412 import that is a page
+ * that does not finish loading.
+ *
+ * It answers the same question the same way: a required box is satisfied by a
+ * document that is not rejected, except the bank-details box, which is a form.
+ */
+export async function progressLabels(
+  employees: readonly { id: string; staffType: StaffType }[],
+): Promise<Map<string, string>> {
+  const labels = new Map<string, string>();
+  if (!employees.length) return labels;
+  const ids = employees.map((e) => e.id);
+
+  const [documents, banks] = await Promise.all([
+    prisma.employeeDocument.groupBy({
+      by: ["employeeId", "kind"],
+      where: { employeeId: { in: ids }, supersededAt: null, status: { not: "REJECTED" } },
+    }),
+    prisma.employeeBankDetail.findMany({
+      where: { employeeId: { in: ids } },
+      select: { employeeId: true, accountName: true, accountNumber: true, bankName: true, branchName: true },
+    }),
+  ]);
+
+  const held = new Map<string, Set<DocumentKind>>();
+  for (const row of documents) {
+    const set = held.get(row.employeeId);
+    if (set) set.add(row.kind);
+    else held.set(row.employeeId, new Set([row.kind]));
+  }
+  const bankComplete = new Set(
+    banks
+      .filter((b) => b.accountName && b.accountNumber && b.bankName && b.branchName)
+      .map((b) => b.employeeId),
+  );
+
+  for (const employee of employees) {
+    const mine = held.get(employee.id) ?? new Set<DocumentKind>();
+    const required = requiredKinds(employee.staffType);
+    const done = required.filter((kind) =>
+      kind === "BANK_DETAILS" ? bankComplete.has(employee.id) : mine.has(kind),
+    ).length;
+    labels.set(employee.id, `${done} of ${required.length} required documents uploaded`);
+  }
+
+  return labels;
+}
+
 const REQUIRED_CACHE = new Map<StaffType, Set<DocumentKind>>();
 function requiredKindSet(staffType: StaffType): Set<DocumentKind> {
   let set = REQUIRED_CACHE.get(staffType);

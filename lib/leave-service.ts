@@ -3,7 +3,9 @@ import { prisma } from "./db";
 import { toISODate, todayInDhaka } from "./dates";
 import {
   allocateFifo,
+  audienceIncludes,
   computeBalance,
+  isUncounted,
   leaveYearBounds,
   proRatedDays,
   ruleOn,
@@ -24,6 +26,8 @@ export type LeaveTypeView = {
   balance: Balance;
   overBalance: "REFUSE" | "WARN";
   attachmentRequiredAfterDays: number | null;
+  /** Not counted against a balance at all — leave without pay. */
+  uncounted: boolean;
 };
 
 /**
@@ -50,7 +54,9 @@ export async function ensureEntitlements(employee: Employee, year: number): Prom
   ]);
 
   const alreadyGranted = new Set(existing.map((e) => e.leaveTypeId));
-  const missing = types.filter((t) => !alreadyGranted.has(t.id));
+  const missing = types.filter(
+    (t) => !alreadyGranted.has(t.id) && audienceIncludes(t.appliesTo, employee.gender),
+  );
   if (!missing.length) return;
 
   const rows: Prisma.LeaveEntitlementCreateManyInput[] = [];
@@ -80,6 +86,29 @@ export async function ensureEntitlements(employee: Employee, year: number): Prom
 
 /** Every leave type with this person's balance in it. */
 export async function leaveTypesFor(employee: Employee, year: number): Promise<LeaveTypeView[]> {
+  return (await leaveTypesForMany([employee], year)).get(employee.id) ?? [];
+}
+
+/**
+ * The same thing for a whole screen full of people, in the same four queries.
+ *
+ * The approvals inbox showed one row per application and asked this question
+ * once per row — "how much leave that person has left" is in §5.2's list of
+ * what an approver must see — so fifty applications cost two hundred queries
+ * on the page an HR Head opens every morning.
+ *
+ * The single-employee case above is the batch of one, deliberately: two
+ * implementations of a balance is how the number on the approver's screen ends
+ * up disagreeing with the number on the applicant's.
+ */
+export async function leaveTypesForMany(
+  employees: readonly Employee[],
+  year: number,
+): Promise<Map<string, LeaveTypeView[]>> {
+  const result = new Map<string, LeaveTypeView[]>();
+  if (!employees.length) return result;
+
+  const ids = [...new Set(employees.map((e) => e.id))];
   const { from, to } = leaveYearBounds(year);
 
   const [types, entitlements, consumed, pending] = await Promise.all([
@@ -89,21 +118,21 @@ export async function leaveTypesFor(employee: Employee, year: number): Promise<L
       orderBy: { sortOrder: "asc" },
     }),
     prisma.leaveEntitlement.findMany({
-      where: { employeeId: employee.id, fromDate: { lte: to }, toDate: { gte: from } },
+      where: { employeeId: { in: ids }, fromDate: { lte: to }, toDate: { gte: from } },
     }),
     // Actually granted leave — the junction, which is the only record of what
     // has left the balance.
     prisma.leaveDayEntitlement.groupBy({
       by: ["entitlementId"],
-      where: { leaveDay: { employeeId: employee.id, date: { gte: from, lte: to } } },
+      where: { leaveDay: { employeeId: { in: ids }, date: { gte: from, lte: to } } },
       _sum: { lengthDays: true },
     }),
     // Applied for and still travelling. Not off the balance yet (§7.1 rule 3),
     // but it cannot be applied for twice either.
     prisma.leaveDay.groupBy({
-      by: ["leaveTypeId"],
+      by: ["employeeId", "leaveTypeId"],
       where: {
-        employeeId: employee.id,
+        employeeId: { in: ids },
         date: { gte: from, lte: to },
         leaveRequest: { status: "PENDING" },
       },
@@ -114,32 +143,63 @@ export async function leaveTypesFor(employee: Employee, year: number): Promise<L
   const consumedByEntitlement = new Map(
     consumed.map((row) => [row.entitlementId, Number(row._sum.lengthDays ?? 0)]),
   );
-  const pendingByType = new Map(
-    pending.map((row) => [row.leaveTypeId, Number(row._sum.lengthDays ?? 0)]),
+  const pendingByKey = new Map(
+    pending.map((row) => [`${row.employeeId}:${row.leaveTypeId}`, Number(row._sum.lengthDays ?? 0)]),
   );
+  const bucketsByEmployee = new Map<string, typeof entitlements>();
+  for (const entitlement of entitlements) {
+    const list = bucketsByEmployee.get(entitlement.employeeId);
+    if (list) list.push(entitlement);
+    else bucketsByEmployee.set(entitlement.employeeId, [entitlement]);
+  }
 
-  return types.map((type) => {
-    const buckets: Bucket[] = entitlements
-      .filter((e) => e.leaveTypeId === type.id)
-      .map((e) => ({
-        id: e.id,
-        fromDate: e.fromDate,
-        toDate: e.toDate,
-        days: Number(e.days),
-      }));
+  for (const employee of employees) {
+    if (result.has(employee.id)) continue;
+    const mine = bucketsByEmployee.get(employee.id) ?? [];
 
-    const used = buckets.reduce((total, b) => total + (consumedByEntitlement.get(b.id) ?? 0), 0);
-    const rule = ruleOn(type.rules, to);
+    result.set(
+      employee.id,
+      types
+        .filter((type) => audienceIncludes(type.appliesTo, employee.gender))
+        .map((type) => {
+          const buckets: Bucket[] = mine
+            .filter((e) => e.leaveTypeId === type.id)
+            .map((e) => ({
+              id: e.id,
+              fromDate: e.fromDate,
+              toDate: e.toDate,
+              days: Number(e.days),
+            }));
 
-    return {
-      id: type.id,
-      code: type.code,
-      name: type.name,
-      balance: computeBalance(buckets, used, pendingByType.get(type.id) ?? 0),
-      overBalance: (rule?.overBalance ?? "REFUSE") as "REFUSE" | "WARN",
-      attachmentRequiredAfterDays: rule?.attachmentRequiredAfterDays ?? null,
-    };
-  });
+          const used = buckets.reduce(
+            (total, b) => total + (consumedByEntitlement.get(b.id) ?? 0),
+            0,
+          );
+          const rule = ruleOn(type.rules, to);
+          const overBalance = (rule?.overBalance ?? "REFUSE") as "REFUSE" | "WARN";
+          const balance = computeBalance(
+            buckets,
+            used,
+            pendingByKey.get(`${employee.id}:${type.id}`) ?? 0,
+          );
+
+          return {
+            id: type.id,
+            code: type.code,
+            name: type.name,
+            balance,
+            overBalance,
+            attachmentRequiredAfterDays: rule?.attachmentRequiredAfterDays ?? null,
+            // Asked of the RULE, not of the buckets: a type whose rule grants
+            // nought days has no buckets, and "no buckets" is also what an
+            // employee who joined in December looks like.
+            uncounted: isUncounted(Number(rule?.daysPerYear ?? 0), overBalance),
+          };
+        }),
+    );
+  }
+
+  return result;
 }
 
 /** The calendar facts every leave calculation needs. */

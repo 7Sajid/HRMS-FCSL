@@ -2,7 +2,7 @@ import { prisma } from "@/lib/db";
 import { formatDate, todayInDhaka } from "@/lib/dates";
 import { byLongestWaiting, escalateAfterWorkingDays, isOverdue } from "@/lib/escalation";
 import { chainAdvance } from "@/lib/approval-chain";
-import { leaveTypesFor } from "@/lib/leave-service";
+import { leaveTypesForMany } from "@/lib/leave-service";
 import { Card, EmptyState } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
 import { DecideButtons } from "./DecideButtons";
@@ -55,12 +55,20 @@ export async function LeaveInbox({
 
   // Balances are what a decision actually turns on — "how much leave that
   // person has left" is in §5.2's list of what each row must show.
-  const balances = new Map<string, number>();
-  for (const request of requests) {
-    if (balances.has(`${request.employeeId}:${request.leaveTypeId}`)) continue;
-    const types = await leaveTypesFor(request.employee, today.getUTCFullYear());
+  //
+  // Asked once for everybody on the screen. It used to be asked once per row,
+  // and each ask was four queries, so an inbox of fifty applications cost two
+  // hundred round trips on the page an HR Head opens every morning.
+  const balances = new Map<string, number | null>();
+  const byEmployee = await leaveTypesForMany(
+    requests.map((request) => request.employee),
+    today.getUTCFullYear(),
+  );
+  for (const [employeeId, types] of byEmployee) {
     for (const type of types) {
-      balances.set(`${request.employeeId}:${type.id}`, type.balance.applicable);
+      // null for a type with no balance — leave without pay. "They have -1
+      // days left" is not something an approver should be shown.
+      balances.set(`${employeeId}:${type.id}`, type.uncounted ? null : type.balance.applicable);
     }
   }
 
@@ -107,7 +115,13 @@ export async function LeaveInbox({
                   <Row label="Working days" value={String(cost)} />
                   <Row
                     label="They have left"
-                    value={left === undefined ? "—" : `${left} day${left === 1 ? "" : "s"}`}
+                    value={
+                      left === undefined
+                        ? "\u2014"
+                        : left === null
+                          ? "not counted"
+                          : `${left} day${left === 1 ? "" : "s"}`
+                    }
                   />
                 </dl>
 

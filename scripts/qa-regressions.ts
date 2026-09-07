@@ -6,12 +6,19 @@ import { runAccessClosure } from "../lib/jobs";
 import { ACTION_GROUPS, ACTION_LABELS, actionLabel } from "../lib/audit";
 import { employeeRecordScope } from "../lib/permissions";
 import { showCauseReplyPdf } from "../lib/pdf";
+import { headcount, documentReport, leaveReport } from "../lib/reports";
+import { leaveTypesFor, leaveTypesForMany } from "../lib/leave-service";
+import { audienceIncludes, isUncounted, planLeaveDays, preflight } from "../lib/leave";
 import { documentKey, getObject, putObject } from "../lib/storage";
 import { commitImport } from "../lib/import-commit";
 import { consumeEntitlement } from "../lib/leave-service";
 import type { CheckedRow } from "../lib/import";
 import { cleanFixtures } from "./qa-clean";
 import { prisma, finish } from "./_cli";
+// The library's own client, which is what lib/ and app/ actually run their
+// queries through — `_cli` opens a separate one for fixtures. Counting on the
+// wrong client counts nothing, quietly.
+import { prisma as appPrisma } from "../lib/db";
 
 /**
  * The four defects found in the A-to-Z audit, each with the check that would
@@ -46,6 +53,25 @@ function check(label: string, condition: boolean, detail = "") {
  *  are gone: `LeaveRequest.leaveType` is onDelete: Restrict on purpose, so a
  *  leave type cannot be removed while any leave still points at it. */
 let regressionLeaveTypeId: string | null = null;
+
+/**
+ * Count the queries a piece of work runs, when PRISMA_LOG_QUERIES=1 is set.
+ * Null when it is not, so the harness still runs without it and says so.
+ */
+const countQueries: ((work: () => Promise<unknown>) => Promise<number>) | null =
+  process.env.PRISMA_LOG_QUERIES === "1"
+    ? async (work) => {
+        let n = 0;
+        const listening = appPrisma as unknown as { $on: (e: "query", f: () => void) => void };
+        listening.$on("query", () => {
+          n += 1;
+        });
+        await work();
+        // Prisma has no $off, so the count is read immediately and the
+        // listener simply stops mattering once this returns.
+        return n;
+      }
+    : null;
 
 function source(path: string): string {
   return readFileSync(join(ROOT, path), "utf8");
@@ -501,6 +527,196 @@ async function main() {
 
   await prisma.employeeDocument.deleteMany({ where: { id: { in: [mine.id, theirs.id] } } });
   await prisma.branch.deleteMany({ where: { id: { in: [dhaka.id, chittagong.id] } } });
+
+  // ---------------------------------------------------------------------
+  console.log("\n10 · Reports count in the database, and agree with counting by hand");
+  // ---------------------------------------------------------------------
+  const people = await headcount();
+  // Counted independently, the slow obvious way, and compared. A rewrite from
+  // "load every row and filter in JavaScript" to "ask the database" is only
+  // worth having if it gives the same answers.
+  const everyone = await prisma.employee.findMany({
+    where: { onboardingStatus: "APPROVED" },
+    include: { user: { select: { role: true } } },
+  });
+  const byHand = {
+    active: everyone.filter((e) => e.status === "ACTIVE").length,
+    left: everyone.filter((e) => e.status === "LEFT").length,
+    managers: everyone.filter((e) => e.status === "ACTIVE" && e.user.role === "MANAGER").length,
+    rms: everyone.filter(
+      (e) => e.status === "ACTIVE" && e.staffType === "RM" && e.user.role !== "MANAGER",
+    ).length,
+    employees: everyone.filter(
+      (e) => e.status === "ACTIVE" && e.staffType === "STAFF" && e.user.role !== "MANAGER",
+    ).length,
+  };
+  check(`active: ${people.active} counted, ${byHand.active} by hand`, people.active === byHand.active);
+  check(`left: ${people.left} counted, ${byHand.left} by hand`, people.left === byHand.left);
+  check("managers agree", people.managers === byHand.managers, `${people.managers} vs ${byHand.managers}`);
+  check("RMs agree", people.rms === byHand.rms, `${people.rms} vs ${byHand.rms}`);
+  check("plain employees agree", people.employees === byHand.employees, `${people.employees} vs ${byHand.employees}`);
+  check(
+    "the three add up to the active headcount",
+    people.managers + people.rms + people.employees === people.active,
+  );
+  check(
+    "every branch, department and grade is still listed",
+    people.byBranch.length === (await prisma.branch.count()) &&
+      people.byDepartment.length === (await prisma.department.count()) &&
+      people.byGrade.length === (await prisma.grade.count()),
+  );
+
+  const docs = await documentReport();
+  check(
+    "the incomplete-files list is capped but its count is the true one",
+    docs.incomplete.length <= docs.incompleteTotal,
+    `${docs.incomplete.length} shown of ${docs.incompleteTotal}`,
+  );
+  const leaveFigures = await leaveReport(todayInDhaka().getUTCFullYear());
+  check(
+    "the took-no-leave list is capped but its count is the true one",
+    leaveFigures.tookNone.length <= leaveFigures.tookNoneTotal,
+    `${leaveFigures.tookNone.length} shown of ${leaveFigures.tookNoneTotal}`,
+  );
+  check(
+    "and that count agrees with counting by hand",
+    leaveFigures.tookNoneTotal ===
+      (await prisma.employee.count({
+        where: {
+          status: "ACTIVE",
+          onboardingStatus: "APPROVED",
+          leaveDays: {
+            none: { lengthDays: { gt: 0 }, leaveRequest: { status: "GRANTED" } },
+          },
+        },
+      })),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n11 · One screen asks one set of questions, not one per row");
+  // ---------------------------------------------------------------------
+  const roster = await prisma.employee.findMany({
+    where: { onboardingStatus: "APPROVED" },
+    take: 20,
+  });
+  if (roster.length >= 2 && countQueries) {
+    const batched = await countQueries(() => leaveTypesForMany(roster, 2026));
+    const oneByOne = await countQueries(async () => {
+      for (const person of roster) await leaveTypesFor(person, 2026);
+    });
+    check(
+      `balances for ${roster.length} people: ${batched} queries batched, ${oneByOne} one at a time`,
+      batched <= 6 && batched < oneByOne,
+      `${batched} vs ${oneByOne}`,
+    );
+    check(
+      "and the batched answer is the same answer",
+      JSON.stringify((await leaveTypesForMany(roster, 2026)).get(roster[0]!.id)) ===
+        JSON.stringify(await leaveTypesFor(roster[0]!, 2026)),
+    );
+  } else {
+    console.log("  · query counting needs PRISMA_LOG_QUERIES=1 — skipped");
+  }
+  check(
+    "[source] the certificate job fetches the HR list once, not once per certificate",
+    /const \[beforeExpiry, afterExpiry, managers\] = await Promise\.all/.test(source("lib/jobs.ts")) &&
+      !/for \(const u of await usersWithRole/.test(source("lib/jobs.ts")),
+  );
+  check(
+    "[source] the joiners queue asks for progress once for the whole list",
+    /await progressLabels\(notStarted\)/.test(source("app/hr/joiners/page.tsx")),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n12 · Leave without pay has no balance to be short of");
+  // ---------------------------------------------------------------------
+  const anyone = roster[0];
+  if (anyone) {
+    const theirTypes = await leaveTypesFor(anyone, todayInDhaka().getUTCFullYear());
+    const unpaid = theirTypes.find((t) => t.code === "UNPAID");
+    check("the seeded unpaid type is recognised as uncounted", unpaid?.uncounted === true);
+    check("and every other type is not", theirTypes.filter((t) => t.uncounted).length === 1);
+  }
+  check("the rule is read from the rule, not from the code", isUncounted(0, "WARN") === true);
+  {
+    const from = calendarDate(2026, 10, 19);
+    const result = preflight({
+      from,
+      to: from,
+      today: todayInDhaka(),
+      days: planLeaveDays(from, from, new Set()),
+      balance: { entitled: 0, taken: 0, pending: 1, available: 0, applicable: -1 },
+      overBalance: "WARN",
+      lateReason: "",
+      overlappingDates: new Set<string>(),
+      attachmentRequiredAfterDays: null,
+      hasAttachment: false,
+      uncounted: true,
+      teamAwayCount: 0,
+      teamSize: 5,
+    });
+    const said = [...result.errors, ...result.warnings].join(" ");
+    check("a negative balance is never quoted back at the applicant", !/-1/.test(said), said);
+    check("and the application is not refused over it", result.ok === true);
+  }
+
+  // ---------------------------------------------------------------------
+  console.log("\n13 · Maternity leave is not offered to every employee");
+  // ---------------------------------------------------------------------
+  const maternity = await prisma.leaveType.findUnique({ where: { code: "MATERNITY" } });
+  check("the seeded type is marked for women", maternity?.appliesTo === "FEMALE");
+  check("a man is not offered it", audienceIncludes("FEMALE", "Male") === false);
+  check("a woman is", audienceIncludes("FEMALE", "Female") === true);
+  check(
+    "somebody whose gender is not recorded still is — the safer of the two mistakes",
+    audienceIncludes("FEMALE", "") === true,
+  );
+  check(
+    "an unrecognised value shows every type rather than none",
+    audienceIncludes(undefined, "Male") === true,
+  );
+  check(
+    "[source] it is asked of the column, never of the code MATERNITY",
+    !/["']MATERNITY["']/.test(source("lib/leave.ts")) &&
+      !/["']MATERNITY["']/.test(source("lib/leave-service.ts")),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n14 · Dates in messages are written the way people write them");
+  // ---------------------------------------------------------------------
+  {
+    const from = calendarDate(2026, 10, 19);
+    const result = preflight({
+      from,
+      to: from,
+      today: calendarDate(2026, 9, 1),
+      days: planLeaveDays(from, from, new Set()),
+      balance: { entitled: 10, taken: 0, pending: 0, available: 10, applicable: 10 },
+      overBalance: "REFUSE",
+      lateReason: "",
+      overlappingDates: new Set(["2026-10-19"]),
+      attachmentRequiredAfterDays: null,
+      hasAttachment: false,
+      uncounted: false,
+      teamAwayCount: 0,
+      teamSize: 5,
+    });
+    const clash = result.errors.find((e) => /already applied/.test(e)) ?? "";
+    check(`the overlap message reads "${clash}"`, /19 Oct 2026/.test(clash));
+    check("and never shows the ISO form", !/2026-10-19/.test(clash));
+  }
+
+  // ---------------------------------------------------------------------
+  console.log("\n15 · Find anybody does not scroll sideways on a phone");
+  // ---------------------------------------------------------------------
+  check(
+    "[source] the wide column can shrink, so the table scrolls instead of the page",
+    /className="min-w-0"/.test(source("app/hr/employees/page.tsx")),
+  );
+  check(
+    "[source] and every table's scroll box can shrink, wherever it is put",
+    /min-w-0 overflow-x-auto/.test(source("components/ui/Table.tsx")),
+  );
 
   if (sequenceBefore) {
     await prisma.employeeIdSequence.update({

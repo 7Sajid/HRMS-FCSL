@@ -129,22 +129,17 @@ export async function employeeIdIsTaken(employeeId: string): Promise<boolean> {
  * somebody already holds.
  */
 export async function syncSequenceToHighestUsed(): Promise<{ letter: string; nextNumber: number }> {
-  const used = await prisma.employee.findMany({
-    where: { employeeId: { not: null } },
+  // One row, ordered the same way the comparison below used to be written by
+  // hand: letter first, then number. Reading all 412 employees to find one
+  // maximum is work the database does for nothing.
+  const top = await prisma.employee.findFirst({
+    where: { employeeId: { not: null }, idLetter: { not: null }, idNumber: { not: null } },
     select: { idLetter: true, idNumber: true },
+    orderBy: [{ idLetter: "desc" }, { idNumber: "desc" }],
   });
 
-  let letter = "A";
-  let highest = 0;
-  for (const row of used) {
-    if (!row.idLetter || row.idNumber === null) continue;
-    const better =
-      row.idLetter > letter || (row.idLetter === letter && row.idNumber > highest);
-    if (better) {
-      letter = row.idLetter;
-      highest = row.idNumber;
-    }
-  }
+  const letter = top?.idLetter ?? "A";
+  const highest = top?.idNumber ?? 0;
 
   const target = highest === 0 ? { letter, nextNumber: 1 } : advance({ letter, nextNumber: highest });
   const current = await prisma.employeeIdSequence.findUnique({ where: { id: 1 } });

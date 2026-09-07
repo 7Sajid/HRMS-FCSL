@@ -4,10 +4,13 @@ import { requireCapability } from "@/lib/auth";
 import { formatDate, todayInDhaka } from "@/lib/dates";
 import { certificateStatus, expiringWithinMonths, urgencyRank } from "@/lib/certificate";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Feedback";
+import { Badge, NoticeBox } from "@/components/ui/Feedback";
 import { TableShell, Tbody, Td, Th, Thead, TableEmpty } from "@/components/ui/Table";
 
 export const metadata = { title: "RM certificates · FCSL HR" };
+
+/** Rule 7. FCSL has fewer than 200 RMs; this is a guard, not a limit. */
+const REGISTER_CAP = 1000;
 
 /**
  * §6.8 — "Every RM in the company on one screen, with issue date, expiry date,
@@ -21,10 +24,14 @@ export default async function Page() {
   await requireCapability("certificates.manage");
   const today = todayInDhaka();
 
-  const [certificates, rmsWithout] = await Promise.all([
+  const [certificates, rmsWithout, totalActive] = await Promise.all([
     prisma.rmCertificate.findMany({
       where: { status: "ACTIVE" },
       include: { employee: { include: { branch: true } } },
+      // Rule 7. Ordered by expiry so the cap, if it is ever reached, keeps the
+      // urgent end — which is the same end the JS sort below puts on top.
+      orderBy: { expiryDate: "asc" },
+      take: REGISTER_CAP,
     }),
     // An RM with no certificate on file at all is the case the register would
     // otherwise never show, because it has no expiry date to sort by.
@@ -36,7 +43,10 @@ export default async function Page() {
         certificates: { none: { status: "ACTIVE" } },
       },
       include: { branch: true },
+      orderBy: { fullName: "asc" },
+      take: REGISTER_CAP,
     }),
+    prisma.rmCertificate.count({ where: { status: "ACTIVE" } }),
   ]);
 
   const sorted = certificates.sort(
@@ -71,6 +81,17 @@ export default async function Page() {
         <Stat label="Next 6 months" value={counts.six} tone="neutral" />
         <Stat label="Next 12 months" value={counts.twelve} tone="neutral" />
       </section>
+
+      {certificates.length < totalActive && (
+        // Never silently. A register that quietly stops at a thousand is a
+        // register that says the last RM does not exist.
+        <div className="mb-6">
+          <NoticeBox tone="warn">
+            Showing {certificates.length} of {totalActive} active certificates, most urgent first.
+            Use Export for the whole register.
+          </NoticeBox>
+        </div>
+      )}
 
       {rmsWithout.length > 0 && (
         <Card className="mb-6 border-warn-500/50 bg-warn-50/30 p-5">

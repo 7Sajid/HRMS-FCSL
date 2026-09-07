@@ -155,13 +155,14 @@ export default async function Page() {
                 Worth knowing in a brokerage — somebody who never takes a day off is somebody whose
                 work nobody else has ever had to pick up.
               </p>
-              {leave.tookNone.length === 0 ? (
+              {leave.tookNoneTotal === 0 ? (
                 <p className="mt-2 text-sm text-ink-400">Everybody has taken some.</p>
               ) : (
                 <p className="mt-2 text-sm text-ink-700">
-                  {leave.tookNone.length} {leave.tookNone.length === 1 ? "person" : "people"} —{" "}
+                  {/* The count is a real count; the names are the first few. */}
+                  {leave.tookNoneTotal} {leave.tookNoneTotal === 1 ? "person" : "people"} —{" "}
                   {leave.tookNone.slice(0, 6).map((p) => p.name).join(", ")}
-                  {leave.tookNone.length > 6 ? " and others" : ""}
+                  {leave.tookNoneTotal > 6 ? " and others" : ""}
                 </p>
               )}
             </Card>
@@ -214,7 +215,7 @@ export default async function Page() {
             </tr>
           </Thead>
           <Tbody>
-            {documents.incomplete.length === 0 && (
+            {documents.incompleteTotal === 0 && (
               <TableEmpty colSpan={4}>
                 Every active staff file is complete. That is the point of the locked door.
               </TableEmpty>
@@ -235,6 +236,18 @@ export default async function Page() {
             ))}
           </Tbody>
         </TableShell>
+        {documents.incompleteTotal > 25 && (
+          // Said rather than silently truncated. A list that stops at
+          // twenty-five without saying so reads as "twenty-five files are
+          // incomplete", which is a different and much better number.
+          <p className="mt-3 text-xs text-ink-500">
+            Showing the 25 longest-waiting of {documents.incompleteTotal} incomplete files.{" "}
+            <Link href="/hr/employees" className="text-brand-500 hover:underline">
+              Find anybody
+            </Link>{" "}
+            filters the whole list.
+          </p>
+        )}
       </section>
     </main>
   );

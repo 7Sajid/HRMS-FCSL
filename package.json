@@ -28,7 +28,7 @@
     "qa:exit": "tsx scripts/qa-exit.ts",
     "qa:import": "tsx scripts/qa-import.ts",
     "qa:compliance": "tsx scripts/qa-compliance.ts",
-    "qa:regressions": "tsx scripts/qa-regressions.ts"
+    "qa:regressions": "PRISMA_LOG_QUERIES=1 tsx scripts/qa-regressions.ts"
   },
   "dependencies": {
     "@prisma/client": "^6.12.0",

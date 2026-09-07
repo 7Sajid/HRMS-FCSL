@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { calendarDate, toISODate } from "./dates";
 import {
   allocateFifo,
+  audienceIncludes,
   computeBalance,
+  isUncounted,
   planLeaveDays,
   preflight,
   proRatedDays,
@@ -203,6 +205,7 @@ describe("§6.2 — what the system checks before accepting an application", () 
     overlappingDates: new Set<string>(),
     attachmentRequiredAfterDays: null,
     hasAttachment: false,
+    uncounted: false,
     teamAwayCount: 0,
     teamSize: 5,
   };
@@ -253,7 +256,10 @@ describe("§6.2 — what the system checks before accepting an application", () 
       overlappingDates: new Set(["2026-09-08"]),
     });
     expect(clash.ok).toBe(false);
-    expect(clash.errors.some((e) => /already applied for leave on 2026-09-08/.test(e))).toBe(true);
+    // Written the way every other date in the system is written. The ISO form
+    // is what the Set is keyed on, not what a person should be shown.
+    expect(clash.errors.some((e) => /already applied for leave on 08 Sept 2026/.test(e))).toBe(true);
+    expect(clash.errors.some((e) => /2026-09-08/.test(e))).toBe(false);
   });
 
   it("3 — ignores an overlap that falls on a weekend, which costs nothing", () => {
@@ -305,5 +311,94 @@ describe("§6.2 — what the system checks before accepting an application", () 
   it("refuses a backwards range", () => {
     const backwards = preflight(forDates(d(2026, 9, 9), d(2026, 9, 7)));
     expect(backwards.ok).toBe(false);
+  });
+});
+
+describe("a type with no entitlement is not a balance (§6.2)", () => {
+  const unpaid = {
+    today: d(2026, 9, 1),
+    balance: computeBalance([], 0, 0),
+    overBalance: "WARN" as const,
+    lateReason: "",
+    overlappingDates: new Set<string>(),
+    attachmentRequiredAfterDays: null,
+    hasAttachment: false,
+    uncounted: true,
+    teamAwayCount: 0,
+    teamSize: 5,
+  };
+
+  it("recognises leave without pay from its rule, not from its code", () => {
+    // §12: leave types are the HR Head's to configure and are never hardcoded.
+    expect(isUncounted(0, "WARN")).toBe(true);
+    // Earned leave that somebody has fully used is NOT uncounted — it has an
+    // entitlement, it is simply spent.
+    expect(isUncounted(20, "WARN")).toBe(false);
+    // Nought days that may NOT be exceeded is a type nobody can take at all,
+    // which is a different thing and still refuses.
+    expect(isUncounted(0, "REFUSE")).toBe(false);
+  });
+
+  it("says nothing about being short of a balance that does not exist", () => {
+    const from = d(2026, 9, 7);
+    const to = d(2026, 9, 7);
+    const result = preflight({
+      ...unpaid,
+      from,
+      to,
+      days: planLeaveDays(from, to, new Set()),
+    });
+    expect(result.ok).toBe(true);
+    const said = [...result.errors, ...result.warnings].join(" ");
+    expect(said).not.toMatch(/more than the balance/);
+    expect(said).not.toMatch(/-1/);
+  });
+
+  it("still refuses a counted type that is genuinely over", () => {
+    const from = d(2026, 9, 7);
+    const to = d(2026, 9, 25);
+    const result = preflight({
+      ...unpaid,
+      uncounted: false,
+      overBalance: "REFUSE" as const,
+      from,
+      to,
+      days: planLeaveDays(from, to, new Set()),
+    });
+    expect(result.ok).toBe(false);
+  });
+});
+
+describe("who a leave type is offered to (§6.2)", () => {
+  it("gives everybody a type marked for everybody", () => {
+    expect(audienceIncludes("ALL", "Male")).toBe(true);
+    expect(audienceIncludes("ALL", "")).toBe(true);
+  });
+
+  it("keeps maternity leave off a man's dropdown", () => {
+    expect(audienceIncludes("FEMALE", "Male")).toBe(false);
+    expect(audienceIncludes("FEMALE", "male")).toBe(false);
+    expect(audienceIncludes("FEMALE", "M")).toBe(false);
+  });
+
+  it("offers it to a woman however HR typed it", () => {
+    for (const written of ["Female", "female", "F", "woman"]) {
+      expect(audienceIncludes("FEMALE", written)).toBe(true);
+    }
+  });
+
+  it("offers it when gender is not recorded", () => {
+    // Deliberate and asymmetric: denying a statutory entitlement over a blank
+    // field is a real harm, offering one over a blank field is an
+    // embarrassment. They are not the same size.
+    expect(audienceIncludes("FEMALE", "")).toBe(true);
+    expect(audienceIncludes("FEMALE", "   ")).toBe(true);
+    expect(audienceIncludes("FEMALE", "Prefer not to say")).toBe(true);
+  });
+
+  it("shows every type rather than none when the value is not one it knows", () => {
+    // A leave page with no leave types on it is a person who cannot apply.
+    expect(audienceIncludes(undefined, "Male")).toBe(true);
+    expect(audienceIncludes(null, "Male")).toBe(true);
   });
 });

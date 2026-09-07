@@ -438,6 +438,7 @@ async function main() {
       overlappingDates: await bookedDates(rm.employee.id),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      uncounted: false,
       teamAwayCount: 0,
       teamSize: 1,
     });
@@ -454,6 +455,7 @@ async function main() {
       overlappingDates: new Set(),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      uncounted: false,
       teamAwayCount: 0,
       teamSize: 1,
     });
@@ -470,6 +472,7 @@ async function main() {
       overlappingDates: new Set(),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      uncounted: false,
       teamAwayCount: 0,
       teamSize: 1,
     });

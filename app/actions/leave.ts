@@ -94,6 +94,7 @@ export async function applyForLeave(_previous: unknown, formData: FormData): Pro
     overlappingDates: booked,
     attachmentRequiredAfterDays: type.attachmentRequiredAfterDays,
     hasAttachment: Boolean(attachmentId),
+    uncounted: type.uncounted,
     teamAwayCount: away,
     teamSize,
   });

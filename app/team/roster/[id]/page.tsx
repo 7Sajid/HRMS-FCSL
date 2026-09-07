@@ -130,8 +130,12 @@ export default async function Page({ params }: Props) {
             {balances.map((type) => (
               <div key={type.id}>
                 <p className="text-xs uppercase tracking-wide text-ink-400">{type.name}</p>
-                <p className="text-xl font-bold tabular text-ink-900">{type.balance.applicable}</p>
-                <p className="text-xs text-ink-500">of {type.balance.entitled}</p>
+                <p className="text-xl font-bold tabular text-ink-900">
+                  {type.uncounted ? "\u2014" : type.balance.applicable}
+                </p>
+                <p className="text-xs text-ink-500">
+                  {type.uncounted ? "not counted" : `of ${type.balance.entitled}`}
+                </p>
               </div>
             ))}
           </div>

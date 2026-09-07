@@ -7,7 +7,11 @@ import type { ReactNode } from "react";
  */
 export function TableShell({ children }: { children: ReactNode }) {
   return (
-    <div className="overflow-x-auto rounded-xl border border-ink-300/40 bg-white">
+    // min-w-0 as well as overflow-x-auto. A grid or flex child defaults to
+    // min-width:auto, which means it grows to its content's intrinsic width
+    // instead of scrolling — so a wide table silently widens the whole page on
+    // a phone rather than scrolling inside its own box.
+    <div className="min-w-0 overflow-x-auto rounded-xl border border-ink-300/40 bg-white">
       <table className="w-full text-left text-sm">{children}</table>
     </div>
   );

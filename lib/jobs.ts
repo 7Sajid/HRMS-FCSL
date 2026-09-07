@@ -65,6 +65,16 @@ export type JobName =
   | "purge"
   | "digest";
 
+/**
+ * How much one nightly run will take on at a time (rule 7).
+ *
+ * Deliberately generous: a job that silently stops short leaves somebody
+ * un-warned. But a job is a request like any other, and one that asks the
+ * database for every pending item in the company is the request that falls
+ * over first when something has gone wrong upstream.
+ */
+const JOB_BATCH = 1000;
+
 export const JOB_NAMES: readonly JobName[] = [
   // Order matters for one reason only: the digest runs LAST, so that anything
   // the other jobs raised this morning is in the same email rather than
@@ -145,6 +155,31 @@ export async function runCertificateLadder(today = todayInDhaka()): Promise<JobR
     orderBy: { expiryDate: "asc" },
   });
 
+  // Fetched once, outside the loop. These two lists are the same for every
+  // certificate in the run, and asking for them per certificate meant a
+  // company with sixty RMs sent sixty identical queries before it sent a
+  // single notification. The managers go the same way: one query for all of
+  // them rather than one each.
+  const [beforeExpiry, afterExpiry, managers] = await Promise.all([
+    usersWithRole("HR_EXECUTIVE", "HR_HEAD"),
+    usersWithRole("HR_HEAD", "SUPER_ADMIN"),
+    prisma.employee.findMany({
+      where: {
+        id: {
+          in: [
+            ...new Set(
+              certificates
+                .map((c) => c.employee.managerId)
+                .filter((id): id is string => id !== null),
+            ),
+          ],
+        },
+      },
+      select: { id: true, userId: true },
+    }),
+  ]);
+  const managerUserId = new Map(managers.map((m) => [m.id, m.userId]));
+
   for (const certificate of certificates) {
     const days = daysBetween(today, certificate.expiryDate);
     const rung = ladderRung(days, today, certificate.expiryDate);
@@ -166,16 +201,13 @@ export async function runCertificateLadder(today = todayInDhaka()): Promise<JobR
     // because by then it is a compliance matter rather than an errand.
     const audience = new Set<string>([certificate.employee.userId]);
     if (expired) {
-      for (const u of await usersWithRole("HR_HEAD", "SUPER_ADMIN")) audience.add(u.id);
+      for (const u of afterExpiry) audience.add(u.id);
     } else {
-      for (const u of await usersWithRole("HR_EXECUTIVE", "HR_HEAD")) audience.add(u.id);
-      if (certificate.employee.managerId) {
-        const manager = await prisma.employee.findUnique({
-          where: { id: certificate.employee.managerId },
-          select: { userId: true },
-        });
-        if (manager) audience.add(manager.userId);
-      }
+      for (const u of beforeExpiry) audience.add(u.id);
+      const manager = certificate.employee.managerId
+        ? managerUserId.get(certificate.employee.managerId)
+        : undefined;
+      if (manager) audience.add(manager);
     }
 
     await notify(
@@ -385,10 +417,16 @@ export async function runEscalations(today = todayInDhaka()): Promise<JobResult>
         leaveType: { select: { name: true } },
         employee: { select: { fullName: true, managerId: true } },
       },
+      // Rule 7 applies to a job as much as to a page: the oldest first, so a
+      // backlog is worked from the end that has waited longest.
+      orderBy: { appliedAt: "asc" },
+      take: JOB_BATCH,
     }),
     prisma.requisition.findMany({
       where: { status: "PENDING", currentApproverRole: { not: null } },
       include: { raisedBy: { select: { fullName: true } } },
+      orderBy: { createdAt: "asc" },
+      take: JOB_BATCH,
     }),
   ]);
 
@@ -480,14 +518,20 @@ export async function runIdleUploads(today = todayInDhaka()): Promise<JobResult>
       user: { disabledAt: null },
     },
     include: { user: { select: { id: true, email: true, createdAt: true } } },
+    orderBy: { createdAt: "asc" },
+    take: JOB_BATCH,
   });
+
+  // Fetched once. It was inside the loop, so a morning with thirty idle
+  // joiners asked for the same HR list thirty times.
+  const hrTeam = await usersWithRole("HR_EXECUTIVE", "HR_HEAD");
 
   for (const person of idle) {
     if (!(await claimToday(`uploads:${person.id}`, "idle-30", today))) continue;
     acted += 1;
 
     const waitingDays = daysBetween(person.createdAt, today);
-    for (const hr of await usersWithRole("HR_EXECUTIVE", "HR_HEAD")) {
+    for (const hr of hrTeam) {
       await notify({
         userId: hr.id,
         title: `${person.fullName} has uploaded nothing in ${waitingDays} days`,

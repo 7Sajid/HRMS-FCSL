@@ -96,6 +96,9 @@ export default async function Page({ searchParams }: Props) {
         }
       />
 
+      {/* min-w-0 on both children. Without it the table's intrinsic width sets
+          the size of the single column this becomes on a phone, the filter
+          panel is stretched to match, and the whole page scrolls sideways. */}
       <div className="grid gap-6 lg:grid-cols-[16rem_1fr]">
         <EmployeeFilters
           options={{
@@ -108,7 +111,7 @@ export default async function Page({ searchParams }: Props) {
           current={params}
         />
 
-        <div>
+        <div className="min-w-0">
           <TableShell>
             <Thead>
               <tr>
