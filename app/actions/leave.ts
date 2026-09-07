@@ -11,6 +11,7 @@ import { planLeaveDays, preflight, workingDayCost } from "@/lib/leave";
 import {
   bookedDates,
   calendarFor,
+  consumeEntitlement,
   ensureEntitlements,
   leaveTypesFor,
   teamAwayOn,
@@ -116,11 +117,18 @@ export async function applyForLeave(_previous: unknown, formData: FormData): Pro
 
     // §7.1: the Super Admin needs no approval. Recorded directly — and the
     // days come off at once, because there is no chain to travel.
+    //
+    // Granting is TWO things: the status changes and the entitlement is
+    // consumed. This branch used to do only the first, so a Super Admin's
+    // balance stayed permanently full however much leave they took. The
+    // chained path in `lib/leave-decide.ts` does both; so does this one now.
+    let shortfall = 0;
     if (!position.approver) {
       await tx.leaveRequest.update({
         where: { id: created.id },
         data: { status: "GRANTED", decidedAt: new Date(), currentApproverRole: null },
       });
+      ({ shortfall } = await consumeEntitlement(tx, created.id));
     }
 
     await record({
@@ -138,6 +146,28 @@ export async function applyForLeave(_previous: unknown, formData: FormData): Pro
       ip,
       tx,
     });
+
+    // A granted leave writes a "granted" line whoever granted it. Without this
+    // the register of leave actually granted would be silently missing every
+    // Super Admin's own.
+    if (!position.approver) {
+      await record({
+        action: "leave.granted",
+        actor: actorFrom({ ...context.user, fullName: employee.fullName }),
+        targetType: "leaveRequest",
+        targetId: created.id,
+        targetLabel: `${employee.fullName} — ${type.name}`,
+        detail: {
+          workingDays: cost,
+          from: formatDate(from),
+          to: formatDate(to),
+          approvers: [`${employee.fullName} — recorded directly, no approval chain`],
+          ...(shortfall > 0 ? { entitlementShortfall: shortfall } : {}),
+        },
+        ip,
+        tx,
+      });
+    }
 
     // One inbox at a time (§7.1 rule 1): only the first approver is told.
     if (position.approver) {

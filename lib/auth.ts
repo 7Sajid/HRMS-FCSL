@@ -4,6 +4,8 @@ import { SignJWT, jwtVerify } from "jose";
 import type { Employee, Role, User } from "@prisma/client";
 import { prisma } from "./db";
 import { can, canSignIn, homePathFor, type Capability, type Viewer } from "./permissions";
+import { accessClosed } from "./exit";
+import { todayInDhaka } from "./dates";
 
 /**
  * Sessions.
@@ -129,6 +131,10 @@ export async function getSessionContext(): Promise<SessionContext | null> {
 
   const user = session.user;
   if (user.disabledAt) return null;
+  // Somebody whose last working day has passed. The nightly job disables the
+  // account, but a session must not stay usable in the hours before it runs —
+  // and an exit recorded in advance leaves nothing disabled at all until then.
+  if (accessClosed(user.employee, todayInDhaka())) return null;
 
   const viewer: Viewer = { id: user.id, role: user.role };
   if (!canSignIn(viewer)) return null;

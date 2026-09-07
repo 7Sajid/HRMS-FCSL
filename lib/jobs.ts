@@ -61,6 +61,7 @@ export type JobName =
   | "attendance"
   | "escalations"
   | "idle-uploads"
+  | "access"
   | "purge"
   | "digest";
 
@@ -72,6 +73,7 @@ export const JOB_NAMES: readonly JobName[] = [
   "attendance",
   "escalations",
   "idle-uploads",
+  "access",
   "purge",
   "digest",
 ];
@@ -507,7 +509,71 @@ export async function runIdleUploads(today = todayInDhaka()): Promise<JobResult>
 }
 
 // ---------------------------------------------------------------------------
-// 5. The one-year purge
+// 5. Closing the access of people who have left
+// ---------------------------------------------------------------------------
+
+/**
+ * §6.6 — "their system access closed the same day."
+ *
+ * The same day means the END of the last working day, which is almost always
+ * in the future when HR finishes the exit. `completeExit` can only close the
+ * account on the spot when that day has already gone by; this is what closes
+ * it on every other occasion, which is to say nearly all of them.
+ */
+export async function runAccessClosure(today = todayInDhaka()): Promise<JobResult> {
+  const notes: string[] = [];
+
+  // Everybody marked LEFT whose last working day has passed and whose account
+  // is still open. `lib/exit.ts` asks the same question of one person on every
+  // request; this asks it of everybody, once a night, and writes the answer
+  // down so HR sees a closed account rather than an open one that happens to
+  // refuse.
+  const left = await prisma.employee.findMany({
+    where: {
+      status: "LEFT",
+      user: { disabledAt: null },
+      OR: [{ lastWorkingDay: null }, { lastWorkingDay: { lt: today } }],
+    },
+    select: { id: true, userId: true, fullName: true, employeeId: true, lastWorkingDay: true },
+  });
+
+  for (const person of left) {
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({ where: { id: person.userId }, data: { disabledAt: new Date() } });
+      // The open sessions go in the same transaction as the flag. An account
+      // marked disabled whose tab keeps working is not disabled, it is
+      // disabled-looking — and somebody has already written "closed" in a
+      // report by then.
+      await tx.session.updateMany({
+        where: { userId: person.userId, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    });
+
+    // No actor: nobody did this, the date did. `recordQuietly` because the
+    // account is already closed by the time we reach here, and refusing to
+    // close it over an unavailable log would be the wrong way round.
+    await recordQuietly({
+      action: "account.disabled",
+      targetType: "user",
+      targetId: person.userId,
+      targetLabel: `${person.fullName} (${person.employeeId ?? "no ID"})`,
+      detail: {
+        reason: person.lastWorkingDay
+          ? `Last working day ${formatDate(person.lastWorkingDay)} has passed. Access closed automatically.`
+          : "Marked as having left with no last working day recorded. Access closed automatically.",
+        automatic: true,
+      },
+    });
+
+    notes.push(`${person.fullName}: access closed`);
+  }
+
+  return { job: "access", considered: left.length, acted: left.length, notes };
+}
+
+// ---------------------------------------------------------------------------
+// 6. The one-year purge
 // ---------------------------------------------------------------------------
 
 /**
@@ -587,7 +653,7 @@ export async function runDocumentPurge(today = todayInDhaka()): Promise<JobResul
 }
 
 // ---------------------------------------------------------------------------
-// 6. The morning digest
+// 7. The morning digest
 // ---------------------------------------------------------------------------
 
 /**
@@ -673,6 +739,7 @@ const JOBS: Record<JobName, (today?: Date) => Promise<JobResult>> = {
   attendance: runAttendanceReminders,
   escalations: runEscalations,
   "idle-uploads": runIdleUploads,
+  access: runAccessClosure,
   purge: runDocumentPurge,
   digest: () => runMorningDigest(),
 };

@@ -47,12 +47,36 @@ export async function markAttendance(
     return { error: "This sheet has been submitted. Only HR can change it now." };
   }
 
+  // The date has to be in the month this sheet is for. `branchId`, `year`,
+  // `month` and `isoDate` arrive as four independent values, so without this a
+  // day in March can be written into the February sheet — and, because the
+  // sheet is created on demand, a nonsense month can be created outright.
+  if (date.getUTCFullYear() !== year || date.getUTCMonth() + 1 !== month) {
+    return { error: "That date is not in the month this sheet covers." };
+  }
+
   // The manager must own this branch. Being a manager is not the same as being
   // a manager of THIS branch.
   const branch = await prisma.branch.findUnique({ where: { id: branchId } });
   if (!branch || branch.branchManagerId !== context.employeeId) {
     return { error: "This is not your branch." };
   }
+
+  // And owning the branch is not the same as this person being IN it. The
+  // check above proves who the manager is; this one proves whose attendance
+  // they are writing. Asked in the query rather than compared after the read,
+  // and deliberately the same question the grid asks when it draws the rows —
+  // anybody the sheet does not show is somebody the sheet cannot record.
+  const onThisSheet = await prisma.employee.findFirst({
+    where: {
+      id: employeeId,
+      branchId,
+      onboardingStatus: "APPROVED",
+      OR: [{ status: "ACTIVE" }, { lastWorkingDay: { gte: calendarDate(year, month, 1) } }],
+    },
+    select: { id: true },
+  });
+  if (!onThisSheet) return { error: "That person is not on this branch's sheet." };
 
   const open =
     sheet ??

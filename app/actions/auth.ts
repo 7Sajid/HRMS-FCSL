@@ -8,6 +8,8 @@ import { actorFrom, record, recordQuietly } from "@/lib/audit";
 import { createSession, destroySession, getSessionContext } from "@/lib/auth";
 import { homePathFor } from "@/lib/permissions";
 import { validatePassword } from "@/lib/passwords";
+import { accessClosed } from "@/lib/exit";
+import { todayInDhaka } from "@/lib/dates";
 import { callerAddress, clearFailures, isRateLimited, recordFailure } from "@/lib/rate-limit";
 
 /**
@@ -66,6 +68,10 @@ export async function signIn(_previous: unknown, formData: FormData): Promise<Ac
   }
 
   if (user.disabledAt) return refuse("account disabled");
+
+  // The same sentence as every other refusal. Whether an account is closed
+  // because the person left is not something to tell whoever is typing.
+  if (accessClosed(user.employee, todayInDhaka())) return refuse("employment ended");
 
   if (user.tempPasswordExpiresAt && user.tempPasswordExpiresAt < new Date()) {
     // §4: an unused temporary password that stays valid for months is a way

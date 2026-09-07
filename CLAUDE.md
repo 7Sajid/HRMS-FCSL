@@ -93,7 +93,7 @@ Accounts and the locked door are HR Executive jobs that only arrive at Panel 3, 
 
 ## The scheduled jobs (§8)
 
-`lib/jobs.ts`, called by `app/api/cron` on one daily Vercel Cron at 02:00 UTC — eight in the morning in Dhaka, because §8 asks for a *morning* summary. One schedule, not six: `runJobs` already orders them with the digest last.
+`lib/jobs.ts`, called by `app/api/cron` on one daily Vercel Cron at 02:00 UTC — eight in the morning in Dhaka, because §8 asks for a *morning* summary. One schedule, not seven: `runJobs` already orders them with the digest last.
 
 Every job is **idempotent within a day**. `ReminderState` records what has already been said about each subject, so a Vercel retry, an overlapping deploy or somebody running it by hand does not send a second email. A warning that arrives twice is a warning people start deleting, which is the failure the register exists to prevent arriving by another route.
 

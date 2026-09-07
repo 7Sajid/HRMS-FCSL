@@ -6,6 +6,15 @@ import { ImportPanel } from "@/components/hr/ImportPanel";
 
 export const metadata = { title: "Import staff · FCSL HR" };
 
+/**
+ * Server Actions inherit the limit of the route they are called from, and the
+ * default is ten seconds. 412 people do not go in in ten seconds however tight
+ * the code is, so this raises it to the most the plan allows. `commitImport`
+ * is built to finish in a small fraction of that — see the comments there —
+ * and this is the headroom, not the plan.
+ */
+export const maxDuration = 60;
+
 export default async function Page() {
   await requireCapability("employees.setup");
 

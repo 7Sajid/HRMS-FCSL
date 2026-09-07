@@ -16,110 +16,168 @@ import type { CheckedRow } from "./import";
 
 export type Importer = { userId: string; role: Role; name: string };
 
+/**
+ * The cost factor for a password nobody will ever be told.
+ *
+ * A cost factor buys resistance to cracking a password a HUMAN chose, offline,
+ * at leisure. These are 32 random characters generated, hashed and discarded
+ * inside one expression — there is no plaintext anywhere for anybody to crack
+ * back to. Imported staff are handed a real temporary password from the
+ * accounts screen when HR is ready to hand one over, and `mustChangePassword`
+ * forces a change even then.
+ *
+ * The number matters because it is multiplied by 412. At cost 10 this is 28
+ * seconds of CPU and Vercel kills the request long before the end of it; at
+ * cost 4 it is under a second. Every password a person will actually type is
+ * still hashed at 10 — `app/actions/auth.ts` and `scripts/create-account.ts`.
+ */
+const UNUSED_PASSWORD_COST = 4;
+
 export async function commitImport(
   actor: Importer,
   toWrite: CheckedRow[],
   options: { fileName: string; skipped: number; ip?: string },
 ): Promise<{ letter: string; nextNumber: number }> {
   const actorName = actor.name;
-  const context = { user: { id: actor.userId, role: actor.role } };
   const ip = options.ip ?? "";
-  const file = { name: options.fileName };
-  const alreadyPresent = { length: options.skipped };
 
   const lookups = await loadLookups();
+
+  // Hashed out here, not row by row inside the transaction. CPU spent inside a
+  // transaction holds a database connection and a set of locks for the whole
+  // of it while doing nothing that needs a database.
+  const hashes = await Promise.all(
+    toWrite.map(() => bcrypt.hash(generatePassword(32), UNUSED_PASSWORD_COST)),
+  );
+
+  const branchOf = (row: CheckedRow) => lookups.branch.get(key(row.branch)) ?? null;
+  const departmentOf = (row: CheckedRow) => lookups.department.get(key(row.department)) ?? null;
+  const designationOf = (row: CheckedRow) => lookups.designation.get(key(row.designation)) ?? null;
+  const gradeOf = (row: CheckedRow) => lookups.grade.get(key(row.grade)) ?? null;
+
   // One transaction for the whole file. A half-finished import of 412 people
   // is worse than none: nobody can tell afterwards which half went in.
   await prisma.$transaction(
     async (tx) => {
-      const created = new Map<string, string>();
+      // A handful of statements rather than four per person. The row-at-a-time
+      // version ran about two thousand sequential round trips for 412 rows,
+      // and a round trip to a pooled database in another process is the whole
+      // cost — it does not matter that each one is small when they are waited
+      // for one after another.
+      const users = await tx.user.createManyAndReturn({
+        data: toWrite.map((row, index) => ({
+          email: row.email,
+          // A password nobody knows. See UNUSED_PASSWORD_COST above.
+          passwordHash: hashes[index]!,
+          role: row.role as never,
+          mustChangePassword: true,
+          createdById: actor.userId,
+          createdByName: actorName,
+        })),
+        select: { id: true, email: true },
+      });
+      // Matched by email rather than by position. Correctness should not rest
+      // on the driver handing rows back in the order they were sent.
+      const userIdByEmail = new Map(users.map((u) => [u.email, u.id]));
 
-      for (const row of toWrite) {
-        const parts = parseEmployeeId(row.employeeId)!;
-        const user = await tx.user.create({
-          data: {
-            email: row.email,
-            // A password nobody knows. Existing staff are already employed, so
-            // HR issues them a real temporary password when they are ready to
-            // hand it over — not months earlier in a spreadsheet import.
-            passwordHash: await bcrypt.hash(generatePassword(32), 10),
-            role: row.role as never,
-            mustChangePassword: true,
-            createdById: context.user.id,
-            createdByName: actorName,
-          },
+      const employees = await tx.employee.createManyAndReturn({
+        data: toWrite.map((row) => ({
+          userId: userIdByEmail.get(row.email)!,
+          employeeId: row.employeeId,
+          // Non-null: `checkImport` has already refused any row whose ID does
+          // not parse, and nothing reaches here that it did not pass.
+          ...(({ letter, number, year }) => ({ idLetter: letter, idNumber: number, idYear: year }))(
+            parseEmployeeId(row.employeeId)!,
+          ),
+          fullName: row.fullName,
+          mobile: row.mobile,
+          staffType: row.staffType,
+          // §12.1: "Existing staff are created directly at Stage 2 — they do
+          // not go through the locked door, because they are already employed
+          // and their files already exist."
+          onboardingStatus: "APPROVED" as const,
+          approvedAt: new Date(),
+          approvedByName: `${actorName} (bulk import)`,
+          joiningDate: row.joiningDate,
+          confirmationDate: row.confirmationDate,
+          branchId: branchOf(row),
+          departmentId: departmentOf(row),
+          designationId: designationOf(row),
+          gradeId: gradeOf(row),
+        })),
+        select: { id: true, employeeId: true },
+      });
+      const idByCode = new Map(employees.map((e) => [e.employeeId!, e.id]));
+
+      // Managers are resolved after everybody exists, because a manager may
+      // appear later in the file than the people who report to them — and may
+      // not be in the file at all, having been imported in an earlier run.
+      const outsideFile = [
+        ...new Set(
+          toWrite
+            .map((r) => r.manager)
+            .filter((code): code is string => Boolean(code) && !idByCode.has(code)),
+        ),
+      ];
+      if (outsideFile.length) {
+        const found = await tx.employee.findMany({
+          where: { employeeId: { in: outsideFile } },
+          select: { id: true, employeeId: true },
         });
+        for (const person of found) idByCode.set(person.employeeId!, person.id);
+      }
+      const managerOf = (row: CheckedRow) =>
+        row.manager ? (idByCode.get(row.manager) ?? null) : null;
 
-        const employee = await tx.employee.create({
-          data: {
-            userId: user.id,
-            employeeId: row.employeeId,
-            idLetter: parts.letter,
-            idNumber: parts.number,
-            idYear: parts.year,
-            fullName: row.fullName,
-            mobile: row.mobile,
-            staffType: row.staffType,
-            // §12.1: "Existing staff are created directly at Stage 2 — they do
-            // not go through the locked door, because they are already
-            // employed and their files already exist."
-            onboardingStatus: "APPROVED",
-            approvedAt: new Date(),
-            approvedByName: `${actorName} (bulk import)`,
-            joiningDate: row.joiningDate,
-            confirmationDate: row.confirmationDate,
-            branchId: lookups.branch.get(key(row.branch)) ?? null,
-            departmentId: lookups.department.get(key(row.department)) ?? null,
-            designationId: lookups.designation.get(key(row.designation)) ?? null,
-            gradeId: lookups.grade.get(key(row.grade)) ?? null,
-          },
-        });
-        created.set(row.employeeId, employee.id);
+      await tx.employeeAssignment.createMany({
+        data: toWrite.map((row) => ({
+          employeeId: idByCode.get(row.employeeId)!,
+          effectiveFrom: row.joiningDate,
+          branchId: branchOf(row),
+          departmentId: departmentOf(row),
+          designationId: designationOf(row),
+          gradeId: gradeOf(row),
+          // Set here rather than patched afterwards: the assignment is the
+          // authoritative history, and a row that is briefly wrong is a row
+          // somebody can read while it is wrong.
+          managerId: managerOf(row),
+          reason: "IMPORT" as const,
+          note: "Imported from the existing staff spreadsheet",
+          recordedById: actor.userId,
+          recordedByName: actorName,
+        })),
+      });
 
-        await tx.employeeAssignment.create({
-          data: {
-            employeeId: employee.id,
-            effectiveFrom: row.joiningDate,
-            branchId: lookups.branch.get(key(row.branch)) ?? null,
-            departmentId: lookups.department.get(key(row.department)) ?? null,
-            designationId: lookups.designation.get(key(row.designation)) ?? null,
-            gradeId: lookups.grade.get(key(row.grade)) ?? null,
-            reason: "IMPORT",
-            note: "Imported from the existing staff spreadsheet",
-            recordedById: context.user.id,
+      const certificates = toWrite.filter(
+        (row) => row.staffType === "RM" && row.certificateNumber && row.certificateExpiry,
+      );
+      if (certificates.length) {
+        await tx.rmCertificate.createMany({
+          data: certificates.map((row) => ({
+            employeeId: idByCode.get(row.employeeId)!,
+            certificateNumber: row.certificateNumber,
+            issueDate: row.certificateIssue ?? row.joiningDate,
+            expiryDate: row.certificateExpiry!,
+            status: "ACTIVE" as const,
+            recordedById: actor.userId,
             recordedByName: actorName,
-          },
+          })),
         });
-
-        if (row.staffType === "RM" && row.certificateNumber && row.certificateExpiry) {
-          await tx.rmCertificate.create({
-            data: {
-              employeeId: employee.id,
-              certificateNumber: row.certificateNumber,
-              issueDate: row.certificateIssue ?? row.joiningDate,
-              expiryDate: row.certificateExpiry,
-              status: "ACTIVE",
-              recordedById: context.user.id,
-              recordedByName: actorName,
-            },
-          });
-        }
       }
 
-      // Managers are linked in a second pass, because a manager may appear
-      // later in the file than the people who report to them.
+      // The cached current manager on Employee, one statement per distinct
+      // manager rather than one per person — a company of 412 has tens of
+      // managers, not hundreds.
+      const reportsByManager = new Map<string, string[]>();
       for (const row of toWrite) {
-        if (!row.manager) continue;
-        const managerId =
-          created.get(row.manager) ??
-          (await tx.employee.findUnique({ where: { employeeId: row.manager } }))?.id;
+        const managerId = managerOf(row);
         if (!managerId) continue;
-        const id = created.get(row.employeeId)!;
-        await tx.employee.update({ where: { id }, data: { managerId } });
-        await tx.employeeAssignment.updateMany({
-          where: { employeeId: id, effectiveTo: null },
-          data: { managerId },
-        });
+        const existing = reportsByManager.get(managerId);
+        if (existing) existing.push(idByCode.get(row.employeeId)!);
+        else reportsByManager.set(managerId, [idByCode.get(row.employeeId)!]);
+      }
+      for (const [managerId, ids] of reportsByManager) {
+        await tx.employee.updateMany({ where: { id: { in: ids } }, data: { managerId } });
       }
 
       await record({
@@ -129,15 +187,15 @@ export async function commitImport(
         targetLabel: `${toWrite.length} existing staff`,
         detail: {
           rows: toWrite.length,
-          skippedAlreadyPresent: alreadyPresent.length,
-          fileName: file.name,
+          skippedAlreadyPresent: options.skipped,
+          fileName: options.fileName,
         },
         ip,
         tx,
       });
     },
-    // 412 rows of bcrypt is not fast. The default 5s would abort halfway.
-    { timeout: 300_000, maxWait: 20_000 },
+    // Generous, but no longer load-bearing: the slow part used to be inside.
+    { timeout: 120_000, maxWait: 20_000 },
   );
 
   // §12.1: "The running counter is set to start at 413 once the import is
