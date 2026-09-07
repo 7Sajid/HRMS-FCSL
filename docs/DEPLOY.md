@@ -1,11 +1,11 @@
 # Deploying FCSL HRM
 
-**Status: LIVE.** https://fcsl-hrm-application-fcsl.vercel.app
+**Status: LIVE and complete.** https://fcsl-hrm-application-fcsl.vercel.app
 
 | | State |
 |---|---|
 | GitHub `sadmanfcsl/FCSL-HRM-Application` | ✅ pushed, private |
-| Vercel `fcsl-hrm-application` (team `fcsl`), region `bom1` | ✅ deployed, Git-linked |
+| Vercel `fcsl-hrm-application` (team `fcsl`), region `bom1` | ✅ deployed |
 | Supabase schema — 42 tables, 3 migrations | ✅ applied |
 | Append-only log — UPDATE / DELETE / TRUNCATE | ✅ **all three refused in production** |
 | Seed — 5 leave types, 6 settings, Fri+Sat weekly off, next ID `A 413` | ✅ |
@@ -13,7 +13,10 @@
 | Every environment variable | ✅ set on Production |
 | `/api/cron` — 404 without the secret, runs with it | ✅ verified against production |
 | Every panel route redirects a stranger to `/signin` | ✅ verified against production |
-| Storage bucket `hrm-documents` | ⛔ **create it, PUBLIC OFF — document uploads fail until it exists** |
+| Storage bucket `hrm-documents` — private, 10 MB limit | ✅ created |
+| Document upload → Supabase → authorised download | ✅ **round-tripped through the live app** |
+
+Nothing is outstanding. The production database holds one user, one employee record and no documents.
 
 ## Deployment protection
 
