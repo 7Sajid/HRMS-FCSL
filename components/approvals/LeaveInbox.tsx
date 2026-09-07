@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { formatDate, todayInDhaka, workingDaysSince } from "@/lib/dates";
+import { formatDate, todayInDhaka } from "@/lib/dates";
+import { byLongestWaiting, escalateAfterWorkingDays, isOverdue } from "@/lib/escalation";
 import { chainAdvance } from "@/lib/approval-chain";
 import { leaveTypesFor } from "@/lib/leave-service";
 import { Card, EmptyState } from "@/components/ui/Card";
@@ -63,12 +64,10 @@ export async function LeaveInbox({
     }
   }
 
-  const rows = requests
-    .map((request) => ({
-      request,
-      waited: workingDaysSince(request.appliedAt, new Set(), [5, 6], today),
-    }))
-    .sort((a, b) => b.waited - a.waited);
+  const threshold = await escalateAfterWorkingDays();
+  const rows = byLongestWaiting(requests, (request) => request.appliedAt, today).map(
+    ({ item, waited }) => ({ request: item, waited }),
+  );
 
   return (
     <div className="space-y-3">
@@ -76,7 +75,7 @@ export async function LeaveInbox({
         const cost = request.days.reduce((total, d) => total + Number(d.lengthDays), 0);
         const first = request.days[0]?.date ?? null;
         const last = request.days.at(-1)?.date ?? null;
-        const overdue = waited >= 3;
+        const overdue = isOverdue(waited, threshold);
         const next = chainAdvance(request.employee.user.role, request.currentStep);
         const left = balances.get(`${request.employeeId}:${request.leaveTypeId}`);
 

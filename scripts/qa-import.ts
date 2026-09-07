@@ -27,6 +27,11 @@ async function main() {
   const clean = parseCsv(readFileSync(path.join(scratch, "staff-clean.csv"), "utf8"));
 
   console.log("\nA spreadsheet with mistakes in it");
+  // The claim is that the dry run WRITES NOTHING, so it is measured as a
+  // change across the run. Asking whether a name exists at all fails the
+  // moment somebody has legitimately imported that person before — which is
+  // an assertion about the database's history, not about the importer.
+  const employeesBefore = await prisma.employee.count();
   const bad = checkImport(broken.headers, toRawRows(broken.headers, broken.rows));
   const messages = bad.problems.map((p) => `row ${p.row} ${p.column}: ${p.message}`);
 
@@ -56,7 +61,12 @@ async function main() {
     bad.unknownColumns.includes("Blood group"),
     bad.unknownColumns.join(", "),
   );
-  check("nothing was written", (await prisma.employee.count({ where: { fullName: "Anwar Hossain" } })) === 0);
+  const employeesAfter = await prisma.employee.count();
+  check(
+    "nothing was written",
+    employeesAfter === employeesBefore,
+    `${employeesBefore} before, ${employeesAfter} after`,
+  );
 
   console.log("\nThe same spreadsheet, corrected");
   const good = checkImport(clean.headers, toRawRows(clean.headers, clean.rows));

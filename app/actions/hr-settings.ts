@@ -1,0 +1,337 @@
+"use server";
+
+import { revalidatePath } from "next/cache";
+import { z } from "zod";
+import { prisma } from "@/lib/db";
+import { currentIp, getSessionContext } from "@/lib/auth";
+import { actorFrom, record } from "@/lib/audit";
+import { can } from "@/lib/permissions";
+import { fromISODate, toISODate } from "@/lib/dates";
+
+export type SettingsResult = { ok: true } | { error: string };
+
+type Guard = { ok: true; context: NonNullable<Awaited<ReturnType<typeof getSessionContext>>> } | { ok: false; error: string };
+
+async function requireHrHead(): Promise<Guard> {
+  const context = await getSessionContext();
+  if (!context) return { ok: false, error: "Please sign in again." };
+  // §12.2 puts leave types and the holiday calendar in the HR Head's hands.
+  if (!can(context.viewer, "settings.manage")) {
+    return { ok: false, error: "Only the HR Head changes these." };
+  }
+  return { ok: true, context };
+}
+
+/**
+ * §6.2 — "There is a settings screen where the HR Head adds leave types and
+ * the number of days each one carries... Each change is saved with the date it
+ * takes effect, so last year's leave is still calculated on last year's rule
+ * and old records do not silently change meaning."
+ *
+ * So changing an entitlement adds a RULE, it never edits one.
+ */
+const ruleSchema = z.object({
+  leaveTypeId: z.string().trim().min(1),
+  effectiveFrom: z.string().trim().min(1, "Set the date this takes effect."),
+  daysPerYear: z.coerce.number().min(0, "Days cannot be negative.").max(366),
+  carryForward: z.string().optional(),
+  carryForwardCap: z.string().trim().optional().default(""),
+  overBalance: z.enum(["REFUSE", "WARN"]),
+  attachmentRequiredAfterDays: z.string().trim().optional().default(""),
+});
+
+export async function saveLeaveRule(_previous: unknown, formData: FormData): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+
+  const parsed = ruleSchema.safeParse(Object.fromEntries(formData));
+  if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+
+  const effectiveFrom = fromISODate(parsed.data.effectiveFrom);
+  if (!effectiveFrom) return { error: "That is not a date." };
+
+  const type = await prisma.leaveType.findUnique({ where: { id: parsed.data.leaveTypeId } });
+  if (!type) return { error: "Unknown leave type." };
+
+  const existing = await prisma.leaveTypeRule.findUnique({
+    where: { leaveTypeId_effectiveFrom: { leaveTypeId: type.id, effectiveFrom } },
+  });
+  if (existing) {
+    return {
+      error: `A rule already starts on ${parsed.data.effectiveFrom}. Pick another date — rules are added, never edited.`,
+    };
+  }
+
+  const actorName = context.employee?.fullName ?? context.user.email;
+  await prisma.$transaction(async (tx) => {
+    await tx.leaveTypeRule.create({
+      data: {
+        leaveTypeId: type.id,
+        effectiveFrom,
+        daysPerYear: parsed.data.daysPerYear,
+        carryForward: parsed.data.carryForward === "yes",
+        carryForwardCap: parsed.data.carryForwardCap ? Number(parsed.data.carryForwardCap) : null,
+        overBalance: parsed.data.overBalance,
+        attachmentRequiredAfterDays: parsed.data.attachmentRequiredAfterDays
+          ? Number(parsed.data.attachmentRequiredAfterDays)
+          : null,
+        createdById: context.user.id,
+        createdByName: actorName,
+      },
+    });
+    await record({
+      action: "leavetype.rule_added",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "leaveType",
+      targetId: type.id,
+      targetLabel: type.name,
+      detail: {
+        effectiveFrom: parsed.data.effectiveFrom,
+        daysPerYear: parsed.data.daysPerYear,
+        carryForward: parsed.data.carryForward === "yes",
+        overBalance: parsed.data.overBalance,
+      },
+      ip: await currentIp(),
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  return { ok: true };
+}
+
+export async function createLeaveType(_previous: unknown, formData: FormData): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+
+  const name = String(formData.get("name") ?? "").trim();
+  const code = String(formData.get("code") ?? "").trim().toUpperCase();
+  const days = Number(formData.get("daysPerYear") ?? 0);
+  if (name.length < 3) return { error: "Give the leave type a name." };
+  if (!/^[A-Z_]{2,20}$/.test(code)) return { error: "A code is capitals and underscores, 2–20 characters." };
+  if (await prisma.leaveType.findUnique({ where: { code } })) {
+    return { error: `${code} is already a leave type.` };
+  }
+
+  const actorName = context.employee?.fullName ?? context.user.email;
+  await prisma.$transaction(async (tx) => {
+    const count = await tx.leaveType.count();
+    const type = await tx.leaveType.create({ data: { name, code, sortOrder: count + 1 } });
+    await tx.leaveTypeRule.create({
+      data: {
+        leaveTypeId: type.id,
+        effectiveFrom: new Date(Date.UTC(new Date().getUTCFullYear(), 0, 1)),
+        daysPerYear: days,
+        createdById: context.user.id,
+        createdByName: actorName,
+      },
+    });
+    await record({
+      action: "leavetype.created",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "leaveType",
+      targetId: type.id,
+      targetLabel: name,
+      detail: { code, daysPerYear: days },
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  return { ok: true };
+}
+
+/**
+ * §12.2 — "The HR Head enters the year's holiday calendar once, at the start
+ * of each year. Government holidays in Bangladesh are announced annually, so
+ * this cannot be built into the software permanently."
+ */
+export async function addHoliday(_previous: unknown, formData: FormData): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+
+  const date = fromISODate(String(formData.get("date") ?? ""));
+  const name = String(formData.get("name") ?? "").trim();
+  const halfDay = formData.get("halfDay") === "yes";
+  if (!date) return { error: "Pick the date." };
+  if (name.length < 2) return { error: "Name the holiday." };
+  if (await prisma.holiday.findUnique({ where: { date } })) {
+    return { error: `${toISODate(date)} is already a holiday.` };
+  }
+
+  const actorName = context.employee?.fullName ?? context.user.email;
+  await prisma.$transaction(async (tx) => {
+    await tx.holiday.create({
+      data: {
+        date,
+        name,
+        halfDay,
+        year: date.getUTCFullYear(),
+        createdById: context.user.id,
+        createdByName: actorName,
+      },
+    });
+    await record({
+      action: "holiday.added",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "holiday",
+      targetLabel: `${name} — ${toISODate(date)}`,
+      detail: { halfDay },
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  return { ok: true };
+}
+
+export async function removeHoliday(id: string): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+
+  const holiday = await prisma.holiday.findUnique({ where: { id } });
+  if (!holiday) return { error: "Not found." };
+
+  // Leave already granted around this date was counted using it. Removing a
+  // holiday after the fact would silently change what those days cost.
+  const affected = await prisma.leaveDay.count({
+    where: { date: holiday.date, dayKind: "HOLIDAY" },
+  });
+  if (affected > 0) {
+    return {
+      error: `${affected} leave day${affected === 1 ? " was" : "s were"} already counted against this holiday. Removing it now would change what that leave cost.`,
+    };
+  }
+
+  const actorName = context.employee?.fullName ?? context.user.email;
+  await prisma.$transaction(async (tx) => {
+    await tx.holiday.delete({ where: { id } });
+    await record({
+      action: "holiday.removed",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "holiday",
+      targetLabel: `${holiday.name} — ${toISODate(holiday.date)}`,
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  return { ok: true };
+}
+
+/** Departments, designations and grades — retired, never deleted. */
+export async function saveOrgItem(
+  kind: "department" | "designation" | "grade",
+  _previous: unknown,
+  formData: FormData,
+): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+
+  const name = String(formData.get("name") ?? "").trim();
+  if (name.length < 2) return { error: "Give it a name." };
+  const rank = Number(formData.get("rank") ?? 0);
+
+  const actorName = context.employee?.fullName ?? context.user.email;
+  const exists =
+    kind === "department"
+      ? await prisma.department.findUnique({ where: { name } })
+      : kind === "designation"
+        ? await prisma.designation.findUnique({ where: { name } })
+        : await prisma.grade.findUnique({ where: { name } });
+  if (exists) return { error: `"${name}" is already there.` };
+
+  await prisma.$transaction(async (tx) => {
+    if (kind === "department") await tx.department.create({ data: { name } });
+    else if (kind === "designation") await tx.designation.create({ data: { name } });
+    else await tx.grade.create({ data: { name, rank } });
+
+    await record({
+      action: "orglist.created",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: kind,
+      targetLabel: name,
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  return { ok: true };
+}
+
+export async function retireOrgItem(
+  kind: "department" | "designation" | "grade",
+  id: string,
+): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+
+  // Retired, not deleted — historic assignments point at these rows and a
+  // deleted grade would make an old posting unreadable.
+  const inUse =
+    kind === "department"
+      ? await prisma.employee.count({ where: { departmentId: id, status: "ACTIVE" } })
+      : kind === "designation"
+        ? await prisma.employee.count({ where: { designationId: id, status: "ACTIVE" } })
+        : await prisma.employee.count({ where: { gradeId: id, status: "ACTIVE" } });
+  if (inUse > 0) {
+    return {
+      error: `${inUse} active ${inUse === 1 ? "person is" : "people are"} still on this. Move them first.`,
+    };
+  }
+
+  const retiredAt = new Date();
+  const actorName = context.employee?.fullName ?? context.user.email;
+  await prisma.$transaction(async (tx) => {
+    if (kind === "department") await tx.department.update({ where: { id }, data: { retiredAt } });
+    else if (kind === "designation") await tx.designation.update({ where: { id }, data: { retiredAt } });
+    else await tx.grade.update({ where: { id }, data: { retiredAt } });
+
+    await record({
+      action: "orglist.retired",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: kind,
+      targetId: id,
+      targetLabel: kind,
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  return { ok: true };
+}
+
+export async function saveSetting(key: string, value: string): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+
+  const before = await prisma.setting.findUnique({ where: { key } });
+  const actorName = context.employee?.fullName ?? context.user.email;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.setting.upsert({
+      where: { key },
+      create: { key, value, updatedById: context.user.id, updatedByName: actorName },
+      update: { value, updatedById: context.user.id, updatedByName: actorName },
+    });
+    await record({
+      action: "settings.updated",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "setting",
+      targetId: key,
+      targetLabel: key,
+      detail: { changes: { [key]: { from: before?.value ?? null, to: value } } },
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  return { ok: true };
+}

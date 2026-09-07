@@ -42,6 +42,9 @@ async function main() {
       mustChangePassword: false,
     },
   });
+  let qaTypeId: string | null = null;
+  let qaTypeCode = "";
+
   const employee = await prisma.employee.create({
     data: {
       userId: user.id,
@@ -131,26 +134,38 @@ async function main() {
     check("the record of the application is kept", stillThere === 4, `${stillThere} day rows`);
 
     console.log("\nLast year's leave computes on last year's rule");
-    const casualType = await prisma.leaveType.findUnique({ where: { code: "CASUAL" } });
-    await prisma.leaveTypeRule.create({
+    // Its own leave type, not the seeded CASUAL one. Adding a dated rule to a
+    // real type and then deleting it back out by predicate would remove a rule
+    // an HR Head had genuinely entered on the same date — a QA script must not
+    // be able to reach real configuration.
+    qaTypeCode = `QALEAVE${Date.now() % 100000}`;
+    const qaType = await prisma.leaveType.create({
       data: {
-        leaveTypeId: casualType!.id,
-        effectiveFrom: calendarDate(2027, 1, 1),
-        daysPerYear: 15,
-        createdByName: "qa",
+        name: "QA dated leave",
+        code: qaTypeCode,
+        rules: {
+          create: [
+            { effectiveFrom: calendarDate(2020, 1, 1), daysPerYear: 10, createdByName: "qa" },
+            { effectiveFrom: calendarDate(2027, 1, 1), daysPerYear: 15, createdByName: "qa" },
+          ],
+        },
       },
     });
-    const stillTen = (await leaveTypesFor(employee, 2026)).find((t) => t.code === "CASUAL")!;
+    qaTypeId = qaType.id;
+
+    await ensureEntitlements(employee, 2026);
+    const stillTen = (await leaveTypesFor(employee, 2026)).find((t) => t.code === qaTypeCode)!;
     check("2026 still uses the 2026 rule", stillTen.balance.entitled === 10, String(stillTen.balance.entitled));
     await ensureEntitlements(employee, 2027);
-    const nextYear = (await leaveTypesFor(employee, 2027)).find((t) => t.code === "CASUAL")!;
+    const nextYear = (await leaveTypesFor(employee, 2027)).find((t) => t.code === qaTypeCode)!;
     check("2027 uses the new one", nextYear.balance.entitled === 15, String(nextYear.balance.entitled));
-    await prisma.leaveTypeRule.deleteMany({
-      where: { leaveTypeId: casualType!.id, effectiveFrom: calendarDate(2027, 1, 1) },
-    });
   } finally {
     await prisma.employee.deleteMany({ where: { id: employee.id } });
     await prisma.user.deleteMany({ where: { id: user.id } });
+    if (qaTypeId) {
+      await prisma.leaveTypeRule.deleteMany({ where: { leaveTypeId: qaTypeId } });
+      await prisma.leaveType.deleteMany({ where: { id: qaTypeId } });
+    }
   }
 
   console.log(`\n${passed} passed, ${failed} failed\n`);

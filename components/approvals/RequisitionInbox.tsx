@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
-import { formatDate, todayInDhaka, workingDaysSince } from "@/lib/dates";
+import { formatDate, todayInDhaka } from "@/lib/dates";
+import { byLongestWaiting, escalateAfterWorkingDays, isOverdue } from "@/lib/escalation";
 import { requisitionLabel, requisitionSpec } from "@/lib/requisitions";
 import { Card, EmptyState } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
@@ -23,12 +24,13 @@ export async function RequisitionInbox({ actorRole }: { actorRole: Role }) {
 
   const threshold = Number(setting?.value ?? 50000);
   const today = todayInDhaka();
+  const escalateAfter = await escalateAfterWorkingDays();
+  const rows = byLongestWaiting(requisitions, (r) => r.createdAt, today);
 
   return (
     <div className="space-y-3">
-      {requisitions.map((requisition) => {
-        const waited = workingDaysSince(requisition.createdAt, new Set(), [5, 6], today);
-        const overdue = waited >= 3;
+      {rows.map(({ item: requisition, waited }) => {
+        const overdue = isOverdue(waited, escalateAfter);
         const amount = requisition.amount ? Number(requisition.amount) : null;
         const spec = requisitionSpec(requisition.type);
         const details = requisition.details as Record<string, string>;
