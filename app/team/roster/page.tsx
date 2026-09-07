@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireCapability } from "@/lib/auth";
-import { visibleEmployeeWhere } from "@/lib/permissions";
+import { employeeRecordScope, visibleEmployeeWhere } from "@/lib/permissions";
 import { formatDate, todayInDhaka } from "@/lib/dates";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
@@ -23,21 +23,47 @@ export default async function Page() {
   const context = await requireCapability("team.readRecords");
   const today = todayInDhaka();
 
-  const team = await prisma.employee.findMany({
+  const self = context.employeeId ?? "__none__";
+
+  const matched = await prisma.employee.findMany({
     where: {
       AND: [
         visibleEmployeeWhere(context.viewer, context.employeeId),
         // Their own row is not part of "my team".
-        { id: { not: context.employeeId ?? "__none__" } },
+        { id: { not: self } },
       ],
     },
-    include: { designation: true, branch: true, department: true },
+    include: {
+      designation: true,
+      branch: true,
+      department: true,
+      assignments: {
+        where: { managerId: self },
+        orderBy: { effectiveFrom: "desc" },
+        include: { designation: true, branch: true },
+      },
+    },
     orderBy: [{ status: "asc" }, { fullName: "asc" }],
     take: 200,
   });
 
+  // §5.2 has two halves and the query above answers only the first. Somebody
+  // who moved on still matches — they should, the old manager keeps the period
+  // — but their CURRENT designation, branch and status are no longer this
+  // manager's to read. So the list is split, and the ones who left the team
+  // are shown as they were, not as they are.
+  const team: typeof matched = [];
+  const former: { member: (typeof matched)[number]; until: Date }[] = [];
+  for (const member of matched) {
+    const scope = employeeRecordScope(context.viewer, context.employeeId, member, member.assignments);
+    if (!scope) continue;
+    if (scope.limited) former.push({ member, until: scope.until });
+    else team.push(member);
+  }
+
   // Who is away today — §6, "that last view alone prevents most of the
-  // accidental double-booking that causes leave to be refused."
+  // accidental double-booking that causes leave to be refused." Current team
+  // only: a former report's leave is somebody else's plan to make.
   const awayToday = await prisma.leaveDay.findMany({
     where: {
       employeeId: { in: team.map((t) => t.id) },
@@ -112,6 +138,52 @@ export default async function Page() {
             ))}
           </Tbody>
         </TableShell>
+      )}
+
+      {former.length > 0 && (
+        <section className="mt-8">
+          <h2 className="mb-1 text-sm font-semibold text-ink-900">Previously reported to you</h2>
+          <p className="mb-3 text-xs text-ink-500">
+            You keep the record of the period they were on your team. What has changed since
+            belongs to whoever manages them now.
+          </p>
+          <TableShell>
+            <Thead>
+              <tr>
+                <Th>Employee ID</Th>
+                <Th>Name</Th>
+                <Th>Designation then</Th>
+                <Th>Branch then</Th>
+                <Th>Left your team</Th>
+              </tr>
+            </Thead>
+            <Tbody>
+              {former.map(({ member, until }) => {
+                const period = member.assignments.find(
+                  (a) => a.effectiveTo?.getTime() === until.getTime(),
+                );
+                return (
+                  <tr key={member.id}>
+                    <Td className="whitespace-nowrap tabular text-ink-500">
+                      {member.employeeId ?? "—"}
+                    </Td>
+                    <Td>
+                      <Link
+                        href={`/team/roster/${member.id}`}
+                        className="text-brand-500 hover:underline"
+                      >
+                        {member.fullName}
+                      </Link>
+                    </Td>
+                    <Td>{period?.designation?.name ?? "—"}</Td>
+                    <Td>{period?.branch?.name ?? "—"}</Td>
+                    <Td className="whitespace-nowrap">{formatDate(until)}</Td>
+                  </tr>
+                );
+              })}
+            </Tbody>
+          </TableShell>
+        </section>
       )}
 
       <p className="mt-4 text-xs text-ink-400">

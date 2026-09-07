@@ -3,6 +3,7 @@ import { requireEmployee } from "@/lib/auth";
 import { formatDate, formatMonth, toISODate, todayInDhaka } from "@/lib/dates";
 import { chainStart, waitingWith } from "@/lib/approval-chain";
 import { calendarFor, ensureEntitlements, leaveTypesFor } from "@/lib/leave-service";
+import { documentLabel } from "@/lib/documents";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
 import { TableShell, Tbody, Td, Th, Thead, TableEmpty } from "@/components/ui/Table";
@@ -23,7 +24,7 @@ export default async function Page() {
 
   await ensureEntitlements(employee, year);
 
-  const [types, calendar, requests, sheet] = await Promise.all([
+  const [types, calendar, requests, sheet, attachments] = await Promise.all([
     leaveTypesFor(employee, year),
     calendarFor(year),
     prisma.leaveRequest.findMany({
@@ -47,6 +48,15 @@ export default async function Page() {
           include: { entries: { where: { employeeId: employee.id }, orderBy: { date: "asc" } } },
         })
       : null,
+    // Their own files, for the "which document is the certificate?" list. HR
+    // has to have accepted it — an application evidenced by a rejected scan is
+    // an application that will bounce back later for the same reason.
+    prisma.employeeDocument.findMany({
+      where: { employeeId: employee.id, status: "ACCEPTED", purgedAt: null, supersededAt: null },
+      select: { id: true, kind: true, label: true, uploadedAt: true },
+      orderBy: { uploadedAt: "desc" },
+      take: 50,
+    }),
   ]);
 
   const goesTo = waitingWith(chainStart(user.role).approver, user.role)
@@ -90,6 +100,10 @@ export default async function Page() {
               holidays={[...calendar.holidays]}
               halfDayHolidays={[...calendar.halfDayHolidays]}
               weeklyOffDays={[...calendar.weeklyOffDays]}
+              attachments={attachments.map((d) => ({
+                id: d.id,
+                label: `${documentLabel(d.kind)}${d.label ? ` — ${d.label}` : ""} (${formatDate(d.uploadedAt)})`,
+              }))}
               today={toISODate(today)}
             />
           ) : (

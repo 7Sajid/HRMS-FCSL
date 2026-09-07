@@ -108,11 +108,36 @@ export async function withdrawRequisition(id: string): Promise<{ ok: true } | { 
   if (!requisition || requisition.raisedById !== context.employee.id) return { error: "Not found." };
   if (requisition.status !== "PENDING") return { error: "This has already been decided." };
 
-  await prisma.requisition.update({
-    where: { id },
-    data: { status: "WITHDRAWN", currentApproverRole: null, decidedAt: new Date() },
+  const spec = requisitionSpec(requisition.type);
+  const ip = await currentIp();
+
+  // The update and its audit row are one transaction, like every other action
+  // in this system. Withdrawal was the one write that recorded nothing, so a
+  // requisition could leave an approver's inbox with no line saying who took
+  // it out or when — which is exactly the question asked when somebody
+  // remembers raising it and cannot find it.
+  await prisma.$transaction(async (tx) => {
+    await tx.requisition.update({
+      where: { id },
+      data: { status: "WITHDRAWN", currentApproverRole: null, decidedAt: new Date() },
+    });
+    await record({
+      action: "requisition.withdrawn",
+      actor: actorFrom({ ...context.user, fullName: context.employee!.fullName }),
+      targetType: "requisition",
+      targetId: id,
+      targetLabel: `${requisition.raisedByName} — ${spec?.label ?? requisition.type}`,
+      detail: {
+        type: requisition.type,
+        amount: requisition.amount === null ? null : Number(requisition.amount),
+        wasWaitingWith: requisition.currentApproverRole,
+      },
+      ip,
+      tx,
+    });
   });
 
   revalidatePath("/team/requisitions");
+  revalidatePath("/hr/approvals");
   return { ok: true };
 }

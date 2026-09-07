@@ -3,6 +3,7 @@ import { currentIp, getSessionContext } from "@/lib/auth";
 import { actorFrom, recordQuietly } from "@/lib/audit";
 import { canReadDocumentsOf } from "@/lib/permissions";
 import { getObject } from "@/lib/storage";
+import { contentDisposition } from "@/lib/uploads";
 
 /**
  * The only way a document is ever read.
@@ -29,7 +30,7 @@ export async function GET(request: Request): Promise<Response> {
   });
   if (!document) return new Response("Not found", { status: 404 });
 
-  if (!canReadDocumentsOf(context.viewer, document.employeeId, context.employeeId)) {
+  if (!canReadDocumentsOf(context.viewer, document.employeeId, context.employeeId, document.kind)) {
     return new Response("Not found", { status: 404 });
   }
 
@@ -62,7 +63,10 @@ export async function GET(request: Request): Promise<Response> {
     headers: {
       "content-type": document.mimeType,
       // inline so HR can read a scan beside the fields without downloading it.
-      "content-disposition": `inline; filename="${document.originalName}"`,
+      // The name goes through contentDisposition rather than straight into the
+      // header: it is a database column, and a character outside Latin-1 in it
+      // makes this route answer 500 with nothing to say why.
+      "content-disposition": contentDisposition("inline", document.originalName),
       // Never cached by a proxy, and not left in a shared browser's cache for
       // the next person at that desk.
       "cache-control": "private, no-store, max-age=0",

@@ -50,6 +50,18 @@ export default async function Page({ params }: Props) {
           <h2 className="mb-1 text-xs font-semibold tracking-widest text-ink-400">YOUR REPLY</h2>
           <p className="mb-4 text-xs text-ink-500">Sent {formatDateTime(showCause.repliedAt)}</p>
           <p className="whitespace-pre-wrap text-sm text-ink-900">{showCause.replyBody}</p>
+          {showCause.replyDocumentId && (
+            // §6.5's PDF. Served through app/api/download like every other
+            // file, so opening it is permission-checked and recorded.
+            <a
+              href={`/api/download?id=${showCause.replyDocumentId}`}
+              target="_blank"
+              rel="noopener"
+              className="mt-4 inline-block text-sm text-brand-500 hover:underline"
+            >
+              Open the PDF of this reply
+            </a>
+          )}
         </Card>
       ) : showCause.closedAt ? null : (
         <Card className="p-6">

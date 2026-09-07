@@ -6,6 +6,7 @@ import {
   canReadDocumentsOf,
   canReadNote,
   canReadShowCause,
+  employeeRecordScope,
   homePathFor,
   visibleEmployeeWhere,
   type Capability,
@@ -183,21 +184,49 @@ describe("visibleEmployeeWhere — scope asked in the query", () => {
 describe("self-access does not need a capability", () => {
   it("an employee reads their own documents and bank details", () => {
     const me = viewer("EMPLOYEE");
-    expect(canReadDocumentsOf(me, "emp-karim", "emp-karim")).toBe(true);
+    expect(canReadDocumentsOf(me, "emp-karim", "emp-karim", "NID")).toBe(true);
     expect(canReadBankDetailsOf(me, "emp-karim", "emp-karim")).toBe(true);
   });
 
   it("but not anybody else's", () => {
     const me = viewer("EMPLOYEE");
-    expect(canReadDocumentsOf(me, "emp-salma", "emp-karim")).toBe(false);
+    expect(canReadDocumentsOf(me, "emp-salma", "emp-karim", "NID")).toBe(false);
     expect(canReadBankDetailsOf(me, "emp-salma", "emp-karim")).toBe(false);
   });
 
   it("and a manager reads their team's records but not their team's documents", () => {
     const boss = viewer("MANAGER");
     expect(can(boss, "team.readRecords")).toBe(true);
-    expect(canReadDocumentsOf(boss, "emp-karim", "emp-manager")).toBe(false);
+    expect(canReadDocumentsOf(boss, "emp-karim", "emp-manager", "NID")).toBe(false);
     expect(canReadBankDetailsOf(boss, "emp-karim", "emp-manager")).toBe(false);
+  });
+});
+
+describe("a show-cause document is narrower than a document (§6.5)", () => {
+  // Three roles hold documents.readAny; only two hold showcause.readAny. The
+  // reply PDF is filed as a document, so the gap is real and this is where it
+  // is closed.
+  it("an HR Executive reads an NID and does NOT read a show-cause reply", () => {
+    const exec = viewer("HR_EXECUTIVE");
+    expect(canReadDocumentsOf(exec, "emp-karim", "emp-hr", "NID")).toBe(true);
+    expect(canReadDocumentsOf(exec, "emp-karim", "emp-hr", "SHOWCAUSE_REPLY")).toBe(false);
+    expect(canReadDocumentsOf(exec, "emp-karim", "emp-hr", "SHOWCAUSE_LETTER")).toBe(false);
+  });
+
+  it("the HR Head reads both", () => {
+    const head = viewer("HR_HEAD");
+    expect(canReadDocumentsOf(head, "emp-karim", "emp-head", "NID")).toBe(true);
+    expect(canReadDocumentsOf(head, "emp-karim", "emp-head", "SHOWCAUSE_REPLY")).toBe(true);
+  });
+
+  it("and the person it is about reads their own", () => {
+    const me = viewer("EMPLOYEE");
+    expect(canReadDocumentsOf(me, "emp-karim", "emp-karim", "SHOWCAUSE_REPLY")).toBe(true);
+  });
+
+  it("a manager reads neither, show-cause or not", () => {
+    const boss = viewer("MANAGER");
+    expect(canReadDocumentsOf(boss, "emp-karim", "emp-manager", "SHOWCAUSE_REPLY")).toBe(false);
   });
 });
 
@@ -236,5 +265,64 @@ describe("where each panel lands after signing in", () => {
     expect(homePathFor(viewer("HR_EXECUTIVE"))).toBe("/hr/joiners");
     expect(homePathFor(viewer("MANAGER"))).toBe("/team/approvals");
     expect(homePathFor(viewer("EMPLOYEE"))).toBe("/me/profile");
+  });
+});
+
+describe("§5.2 — the old manager keeps the period and loses everything after", () => {
+  const boss = viewer("MANAGER");
+  const SELF = "emp-boss";
+  const day = (iso: string) => new Date(`${iso}T00:00:00Z`);
+  const person = (managerId: string | null) => ({ id: "emp-karim", managerId });
+
+  it("a current report is not limited at all", () => {
+    expect(employeeRecordScope(boss, SELF, person(SELF), [])).toEqual({ limited: false });
+  });
+
+  it("HR sees everybody's record as it is now", () => {
+    const hr = viewer("HR_EXECUTIVE");
+    expect(employeeRecordScope(hr, "emp-hr", person("emp-someone"), [])).toEqual({ limited: false });
+  });
+
+  it("your own record is never limited", () => {
+    expect(
+      employeeRecordScope(boss, "emp-karim", person("emp-someone-else"), []),
+    ).toEqual({ limited: false });
+  });
+
+  it("somebody who transferred away is limited to the transfer date", () => {
+    expect(
+      employeeRecordScope(boss, SELF, person("emp-new-boss"), [
+        { effectiveFrom: day("2024-01-01"), effectiveTo: day("2026-03-12") },
+      ]),
+    ).toEqual({ limited: true, until: day("2026-03-12") });
+  });
+
+  it("two spells under the same manager end at the later one", () => {
+    // Somebody can come back to a team. The boundary is the end of the LAST
+    // spell, not the first one the query happens to return.
+    expect(
+      employeeRecordScope(boss, SELF, person("emp-new-boss"), [
+        { effectiveFrom: day("2020-01-01"), effectiveTo: day("2021-06-30") },
+        { effectiveFrom: day("2024-01-01"), effectiveTo: day("2026-03-12") },
+      ]),
+    ).toEqual({ limited: true, until: day("2026-03-12") });
+  });
+
+  it("an open-ended past spell that disagrees with the pointer gives nothing", () => {
+    // The history says still-managing, the current pointer says otherwise.
+    // Read the strict way: a bookkeeping slip must not hand over a live record.
+    expect(
+      employeeRecordScope(boss, SELF, person("emp-new-boss"), [
+        { effectiveFrom: day("2024-01-01"), effectiveTo: null },
+      ]),
+    ).toBeNull();
+  });
+
+  it("somebody who never reported to them gives nothing", () => {
+    expect(employeeRecordScope(boss, SELF, person("emp-new-boss"), [])).toBeNull();
+  });
+
+  it("a viewer with no employee record of their own gives nothing", () => {
+    expect(employeeRecordScope(boss, null, person("emp-new-boss"), [])).toBeNull();
   });
 });

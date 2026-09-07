@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { checkUpload, formatBytes, safeFileName, sniffType } from "./uploads";
+import { checkUpload, contentDisposition, formatBytes, safeFileName, sniffType } from "./uploads";
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0, 0, 0, 0]);
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0]);
@@ -103,5 +103,31 @@ describe("sizes people can read", () => {
     expect(formatBytes(512)).toBe("512 B");
     expect(formatBytes(2048)).toBe("2 KB");
     expect(formatBytes(5 * 1024 * 1024)).toBe("5.0 MB");
+  });
+});
+
+describe("contentDisposition — the header cannot be broken by a filename", () => {
+  it("keeps an ordinary name as it is", () => {
+    expect(contentDisposition("inline", "cv.pdf")).toContain('filename="cv.pdf"');
+  });
+
+  it("never emits a byte outside Latin-1, whatever the name holds", () => {
+    // An em dash in a system-generated name is what found this: the header was
+    // rejected and the route answered 500 with nothing to say why.
+    for (const name of ["Show-cause reply — 08 Sept 2026.pdf", "আবার.pdf", "café ✓.png"]) {
+      const header = contentDisposition("inline", name);
+      expect(/^[\x20-\x7E]*$/.test(header)).toBe(true);
+    }
+  });
+
+  it("cannot be used to inject a second header", () => {
+    const header = contentDisposition("attachment", 'nid.pdf"\r\nSet-Cookie: a=b');
+    expect(header).not.toContain("\r");
+    expect(header).not.toContain("\n");
+    expect(header.split('filename="')[1]!.split('"')[0]).not.toContain('"');
+  });
+
+  it("still carries the real name for a browser that understands it", () => {
+    expect(contentDisposition("inline", "café.pdf")).toContain("filename*=UTF-8''caf%C3%A9.pdf");
   });
 });

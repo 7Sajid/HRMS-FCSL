@@ -1,4 +1,4 @@
-import type { Prisma, Role } from "@prisma/client";
+import type { DocumentKind, Prisma, Role } from "@prisma/client";
 
 /**
  * Who may do what.
@@ -246,13 +246,84 @@ export function visibleEmployeeWhere(
 }
 
 /**
+ * How far into somebody's record may this viewer see?
+ *
+ * §5.2: "the old manager keeps access to the records of the period when that
+ * person reported to them, and LOSES ACCESS TO EVERYTHING AFTER THE TRANSFER
+ * DATE." `visibleEmployeeWhere` answers only the first half — whether the row
+ * may be opened at all — and it reaches through EmployeeAssignment, so a
+ * manager keeps matching somebody who moved away years ago. On its own that
+ * handed the old manager the CURRENT row: today's branch, today's department,
+ * today's designation, today's manager, today's leave balance. The comment
+ * beside it promised the opposite of what the code did.
+ *
+ * So the second half is asked here, and the answer is a date. A screen that
+ * gets `limited` shows the record as at that date and nothing later.
+ *
+ * `null` means no access at all. That should not be reachable — the row was
+ * fetched through `visibleEmployeeWhere` — so a screen that gets it should
+ * behave as though the person does not exist rather than guess.
+ */
+export type RecordScope = { limited: false } | { limited: true; until: Date };
+
+export function employeeRecordScope(
+  viewer: Viewer,
+  selfEmployeeId: string | null,
+  employee: { id: string; managerId: string | null },
+  assignmentsUnderThisViewer: { effectiveFrom: Date; effectiveTo: Date | null }[],
+): RecordScope | null {
+  if (can(viewer, "employees.readAll")) return { limited: false };
+  if (selfEmployeeId && employee.id === selfEmployeeId) return { limited: false };
+  if (!selfEmployeeId) return null;
+
+  // Reporting to them right now. Nothing to limit — everything about this
+  // person's present is this manager's business.
+  if (employee.managerId === selfEmployeeId) return { limited: false };
+
+  // An open-ended past assignment means the pointer and the history disagree.
+  // Reading it as "still current" would hand over today's record on the
+  // strength of a bookkeeping slip, so it is read the strict way instead.
+  const ends = assignmentsUnderThisViewer
+    .map((a) => a.effectiveTo)
+    .filter((end): end is Date => end !== null);
+  if (!ends.length) return null;
+
+  // The LATEST of them: somebody can report to the same manager twice with a
+  // spell elsewhere in between, and the boundary is the end of the last spell.
+  const until = ends.reduce((latest, end) => (end > latest ? end : latest));
+  return { limited: true, until };
+}
+
+/**
  * May this viewer open somebody's documents?
  *
  * Their own, always. Everyone else's needs `documents.readAny` — which a
  * manager does not have, and that is the interesting cell in §9 row 3.
+ *
+ * The kind is required rather than optional, so that adding a new document
+ * kind makes the compiler ask this question rather than letting it default to
+ * the loose answer. §6.5 is the reason: a show-cause is the HR HEAD's and the
+ * employee's, "and nobody else by default, not even their manager". Three
+ * roles hold `documents.readAny` and only two hold `showcause.readAny`, so
+ * filing the reply as a document in the staff file — which §6.5 also requires,
+ * "letter, reply and outcome stay together in the file permanently" — would
+ * otherwise have handed every HR Executive a disciplinary record they are not
+ * entitled to see.
  */
-export function canReadDocumentsOf(viewer: Viewer, ownerEmployeeId: string, selfEmployeeId: string | null): boolean {
+export function canReadDocumentsOf(
+  viewer: Viewer,
+  ownerEmployeeId: string,
+  selfEmployeeId: string | null,
+  kind: DocumentKind,
+): boolean {
   if (selfEmployeeId && ownerEmployeeId === selfEmployeeId) return true;
+  if (kind === "SHOWCAUSE_LETTER" || kind === "SHOWCAUSE_REPLY") {
+    // Deliberately NOT the `visibleToManager` exception: that is a decision
+    // taken on one show-cause and it is applied on the show-cause screen,
+    // which knows which record is being opened. A document id on its own does
+    // not carry that decision, so the answer here is the default one.
+    return can(viewer, "showcause.readAny");
+  }
   return can(viewer, "documents.readAny");
 }
 

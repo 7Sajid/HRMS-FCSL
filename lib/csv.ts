@@ -7,6 +7,8 @@
  * about" (§5.3).
  */
 
+import { contentDisposition } from "./uploads";
+
 /**
  * A cell that Excel would otherwise execute.
  *
@@ -45,7 +47,7 @@ export function csvResponse(body: string, fileName: string): Response {
   return new Response(body, {
     headers: {
       "content-type": "text/csv; charset=utf-8",
-      "content-disposition": `attachment; filename="${fileName}"`,
+      "content-disposition": contentDisposition("attachment", fileName),
       // An export is a snapshot of people's details. It must not sit in a
       // proxy or a browser cache for the next person on that machine.
       "cache-control": "no-store, max-age=0",

@@ -82,6 +82,7 @@ export type AuditAction =
   | "attendance.published"
   // Requisition
   | "requisition.raised"
+  | "requisition.withdrawn"
   | "requisition.approved_step"
   | "requisition.denied"
   | "requisition.approved"
@@ -178,6 +179,7 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "attendance.published": "Monthly attendance published",
 
   "requisition.raised": "Requisition raised",
+  "requisition.withdrawn": "Requisition withdrawn",
   "requisition.approved_step": "Requisition approved at a step",
   "requisition.denied": "Requisition denied",
   "requisition.approved": "Requisition finally approved",
@@ -290,6 +292,7 @@ export const ACTION_GROUPS: { label: string; actions: AuditAction[] }[] = [
     label: "Requisition and compliance",
     actions: [
       "requisition.raised",
+      "requisition.withdrawn",
       "requisition.approved_step",
       "requisition.denied",
       "requisition.approved",

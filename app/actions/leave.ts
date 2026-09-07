@@ -45,6 +45,20 @@ export async function applyForLeave(_previous: unknown, formData: FormData): Pro
   if (!from || !to) return { error: "Pick the first and last day." };
   if (reason.length < 3) return { error: "Please write a short reason." };
 
+  // The attachment has to be one of their own files. It arrives as an id in a
+  // form field, so without this any document id in the system could be cited —
+  // and while the FILE itself stays unreadable (app/api/download re-checks),
+  // the citation alone puts somebody else's medical certificate on the record
+  // as the evidence for this application. Asked in the query: a document that
+  // is not theirs simply does not match.
+  if (attachmentId) {
+    const own = await prisma.employeeDocument.findFirst({
+      where: { id: attachmentId, employeeId: employee.id, purgedAt: null },
+      select: { id: true },
+    });
+    if (!own) return { error: "Pick one of your own uploaded documents." };
+  }
+
   const year = from.getUTCFullYear();
   await ensureEntitlements(employee, year);
 

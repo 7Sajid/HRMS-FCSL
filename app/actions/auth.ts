@@ -148,6 +148,17 @@ export async function setPassword(_previous: unknown, formData: FormData): Promi
         tempPasswordExpiresAt: null,
       },
     });
+    // Every session goes, this browser's included.
+    //
+    // This is the screen somebody uses when they think their password has gone
+    // astray, and a password change that leaves the other device signed in has
+    // not answered the question they were asking. HR's `reissuePassword` has
+    // always done this; doing it by hand did not, which is the wrong way round
+    // — the person who suspects a problem should not get the weaker of the two.
+    await tx.session.updateMany({
+      where: { userId: context.user.id, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
     await record({
       action: "auth.password_changed",
       actor: actorFrom({
@@ -160,6 +171,11 @@ export async function setPassword(_previous: unknown, formData: FormData): Promi
       tx,
     });
   });
+
+  // And a fresh one for the device standing here, after the commit. Rotating
+  // rather than sparing the current session means the old cookie value is dead
+  // everywhere it might have been copied to, not merely everywhere it was used.
+  await createSession(context.user.id);
 
   // Stage 1 accounts go to the upload screen; everyone else to their panel.
   if (context.employee && context.employee.onboardingStatus !== "APPROVED") {

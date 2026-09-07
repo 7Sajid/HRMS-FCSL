@@ -24,6 +24,8 @@ export type TypeOption = {
  * The working-day count is computed here from the same holiday list and weekly
  * off the server uses, so the preview and the decision cannot disagree.
  */
+export type AttachmentOption = { id: string; label: string };
+
 export function ApplyForLeave({
   types,
   goesTo,
@@ -31,6 +33,7 @@ export function ApplyForLeave({
   halfDayHolidays,
   weeklyOffDays,
   today,
+  attachments,
 }: {
   types: TypeOption[];
   goesTo: string;
@@ -38,6 +41,8 @@ export function ApplyForLeave({
   halfDayHolidays: string[];
   weeklyOffDays: number[];
   today: string;
+  /** The applicant's OWN uploaded files. The server re-checks ownership. */
+  attachments: AttachmentOption[];
 }) {
   const router = useRouter();
   const [state, formAction, pending] = useActionState(applyForLeave, null);
@@ -127,10 +132,36 @@ export function ApplyForLeave({
       )}
 
       {needsCertificate && (
-        <NoticeBox tone="warn">
-          Leave of more than {type?.attachmentRequiredAfterDays} days of this type needs a medical
-          certificate. Upload it on your documents page first, then apply.
-        </NoticeBox>
+        // The notice used to say "upload it on your documents page first, then
+        // apply" and then gave no way to point at it, so the pre-flight check
+        // could never be satisfied through this screen. The list is the
+        // person's own files; the server checks that again before saving.
+        <>
+          <NoticeBox tone="warn">
+            Leave of more than {type?.attachmentRequiredAfterDays} days of this type needs a medical
+            certificate.
+            {attachments.length === 0 && " Upload it on your documents page first, then come back."}
+          </NoticeBox>
+          {attachments.length > 0 && (
+            <Field
+              label="Which document is the certificate?"
+              htmlFor="attachmentId"
+              hint="Your own uploaded files."
+              required
+            >
+              <Select id="attachmentId" name="attachmentId" defaultValue="" required>
+                <option value="" disabled>
+                  Choose a file
+                </option>
+                {attachments.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.label}
+                  </option>
+                ))}
+              </Select>
+            </Field>
+          )}
+        </>
       )}
 
       <Field label="Reason" htmlFor="reason" required>

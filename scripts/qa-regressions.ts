@@ -3,6 +3,10 @@ import { join } from "node:path";
 import bcrypt from "bcryptjs";
 import { addDays, calendarDate, todayInDhaka, toISODate } from "../lib/dates";
 import { runAccessClosure } from "../lib/jobs";
+import { ACTION_GROUPS, ACTION_LABELS, actionLabel } from "../lib/audit";
+import { employeeRecordScope } from "../lib/permissions";
+import { showCauseReplyPdf } from "../lib/pdf";
+import { documentKey, getObject, putObject } from "../lib/storage";
 import { commitImport } from "../lib/import-commit";
 import { consumeEntitlement } from "../lib/leave-service";
 import type { CheckedRow } from "../lib/import";
@@ -300,6 +304,203 @@ async function main() {
     "[source] and the date has to belong to the month the sheet is for",
     /date\.getUTCFullYear\(\) !== year \|\| date\.getUTCMonth\(\) \+ 1 !== month/.test(attendance),
   );
+
+  // ---------------------------------------------------------------------
+  console.log("\n5 · Changing your own password signs out every other device");
+  // ---------------------------------------------------------------------
+  const authSource = source("app/actions/auth.ts");
+  const setPassword = authSource.slice(authSource.indexOf("export async function setPassword"));
+  check(
+    "[source] the change revokes every open session for that account",
+    /session\.updateMany\(\{[\s\S]{0,160}revokedAt: null[\s\S]{0,120}revokedAt: new Date\(\)/.test(
+      setPassword,
+    ),
+  );
+  check(
+    "[source] and a fresh session is issued, so this browser is not signed out too",
+    /await createSession\(context\.user\.id\)/.test(setPassword),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n6 · Withdrawing a requisition leaves a trace");
+  // ---------------------------------------------------------------------
+  // An action name that exists in the union but nowhere else renders as a raw
+  // key in the viewer and can never be filtered to. All three or none.
+  check(
+    "the action has a label a person can read",
+    ACTION_LABELS["requisition.withdrawn"] === "Requisition withdrawn" &&
+      actionLabel("requisition.withdrawn") === "Requisition withdrawn",
+  );
+  check(
+    "and it sits in a filter group, so it can be found",
+    ACTION_GROUPS.some((g) => g.actions.includes("requisition.withdrawn")),
+  );
+  check(
+    "[source] the withdrawal and its audit row are one transaction",
+    /\$transaction\([\s\S]{0,400}action: "requisition\.withdrawn"/.test(
+      source("app/actions/requisitions.ts"),
+    ),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n7 · A former manager loses everything after the transfer (§5.2)");
+  // ---------------------------------------------------------------------
+  const oldBoss = await fixture("qa-reg-oldboss@qa.fcsl.invalid", "QA Old Boss", {});
+  const dhaka = await prisma.branch.create({
+    data: { name: "QA Dhaka Regression", code: "QAD", openedOn: calendarDate(2020, 1, 1) },
+  });
+  const chittagong = await prisma.branch.create({
+    data: { name: "QA Chittagong Regression", code: "QAC", openedOn: calendarDate(2020, 1, 1) },
+  });
+  const moved = await fixture("qa-reg-moved@qa.fcsl.invalid", "QA Transferred Person", {
+    branchId: chittagong.id,
+  });
+  await prisma.employeeAssignment.create({
+    data: {
+      employeeId: moved.employeeId,
+      effectiveFrom: calendarDate(2024, 1, 1),
+      effectiveTo: calendarDate(2026, 3, 12),
+      branchId: dhaka.id,
+      managerId: oldBoss.employeeId,
+      reason: "JOINING",
+      recordedByName: "qa",
+    },
+  });
+
+  // Exactly the query the roster pages run.
+  const asThePageSeesIt = await prisma.employee.findFirst({
+    where: { id: moved.employeeId },
+    include: {
+      branch: true,
+      assignments: {
+        where: { managerId: oldBoss.employeeId },
+        orderBy: { effectiveFrom: "desc" },
+        include: { branch: true },
+      },
+    },
+  });
+  const scope = employeeRecordScope(
+    { id: "u", role: "MANAGER" },
+    oldBoss.employeeId,
+    asThePageSeesIt!,
+    asThePageSeesIt!.assignments,
+  );
+  check("the old manager's view is limited, not open", scope?.limited === true);
+  check(
+    "and it stops on the transfer date",
+    scope?.limited === true && toISODate(scope.until) === "2026-03-12",
+    scope?.limited === true ? toISODate(scope.until) : String(scope),
+  );
+  // The leak made visible: the two branches differ, so a page rendering the
+  // current row instead of the period row is telling the old manager where
+  // this person works now.
+  check(
+    "the period row and the current row genuinely disagree",
+    asThePageSeesIt!.branch?.name === "QA Chittagong Regression" &&
+      asThePageSeesIt!.assignments[0]?.branch?.name === "QA Dhaka Regression",
+  );
+  const rosterSource = source("app/team/roster/[id]/page.tsx");
+  check(
+    "[source] the detail page renders the period row when the scope is limited",
+    /const shown = period \?\? member/.test(rosterSource) &&
+      /scope\.limited\s*\?\s*member\.assignments\.find/.test(rosterSource),
+  );
+  check(
+    "[source] and does not compute current leave balances for a former report",
+    /scope\.limited\s*\?\s*\[\]\s*:\s*await leaveTypesFor/.test(rosterSource),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n8 · A leave application can only cite your own file (§6.2)");
+  // ---------------------------------------------------------------------
+  const mine = await prisma.employeeDocument.create({
+    data: {
+      employeeId: moved.employeeId,
+      kind: "OTHER",
+      storageKey: "qa/regression/mine.pdf",
+      originalName: "mine.pdf",
+      mimeType: "application/pdf",
+      size: 1,
+      status: "ACCEPTED",
+    },
+  });
+  const theirs = await prisma.employeeDocument.create({
+    data: {
+      employeeId: oldBoss.employeeId,
+      kind: "OTHER",
+      storageKey: "qa/regression/theirs.pdf",
+      originalName: "theirs.pdf",
+      mimeType: "application/pdf",
+      size: 1,
+      status: "ACCEPTED",
+    },
+  });
+  // The exact ownership question the action asks.
+  const owns = (documentId: string, employeeId: string) =>
+    prisma.employeeDocument.findFirst({
+      where: { id: documentId, employeeId, purgedAt: null },
+      select: { id: true },
+    });
+  check("your own document matches", (await owns(mine.id, moved.employeeId)) !== null);
+  check("somebody else's does not", (await owns(theirs.id, moved.employeeId)) === null);
+  check(
+    "[source] the action asks it before saving the application",
+    /employeeDocument\.findFirst\(\{\s*where: \{ id: attachmentId, employeeId: employee\.id/.test(
+      source("app/actions/leave.ts"),
+    ),
+  );
+  check(
+    "[source] and the form offers a list, so the check guards a field that can be filled",
+    /name="attachmentId"/.test(source("components/leave/ApplyForLeave.tsx")),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n9 · The show-cause reply becomes a PDF (§6.5)");
+  // ---------------------------------------------------------------------
+  const pdfBytes = await showCauseReplyPdf({
+    employeeName: "QA Transferred Person",
+    employeeCode: "A 118 - 24 - 70",
+    subject: "QA regression subject",
+    letterBody: "The letter this reply answers, so the file reads on its own.",
+    issuedByName: "QA HR Head",
+    issuedOn: "5 Sep 2026",
+    replyBody: "My account of what happened. ".repeat(40),
+    repliedOn: "8 Sep 2026",
+  });
+  check("it is a PDF", Buffer.from(pdfBytes.slice(0, 5)).toString() === "%PDF-");
+
+  // Through the real storage driver and back, because a PDF that is generated
+  // and then cannot be stored or read is not a document.
+  const pdfKey = documentKey(moved.employeeId, "SHOWCAUSE_REPLY", "reply.pdf");
+  await putObject(pdfKey, pdfBytes, "application/pdf");
+  const readBack = await getObject(pdfKey);
+  check("it survives a round trip through storage", readBack?.length === pdfBytes.length);
+
+  // Scoped to replyToShowCause: issueShowCause opens a transaction earlier in
+  // the file, and comparing positions across the whole file compared the wrong
+  // two things.
+  const complianceFile = source("app/actions/compliance.ts");
+  const complianceSource = complianceFile.slice(
+    complianceFile.indexOf("export async function replyToShowCause"),
+    complianceFile.indexOf("export async function closeShowCause"),
+  );
+  check(
+    "[source] the file is written before the rows that point at it",
+    complianceSource.indexOf("await putObject(key, bytes") <
+      complianceSource.indexOf("await prisma.$transaction") &&
+      complianceSource.includes("await putObject(key, bytes"),
+  );
+  check(
+    "[source] the reply is still saved when the PDF cannot be made",
+    /catch \(error\) \{[\s\S]{0,400}pdfFailed/.test(complianceSource),
+  );
+  check(
+    "[source] and replyDocumentId is actually set on the show-cause",
+    /replyDocumentId,\s*\n\s*repliedAt: new Date\(\)/.test(complianceSource),
+  );
+
+  await prisma.employeeDocument.deleteMany({ where: { id: { in: [mine.id, theirs.id] } } });
+  await prisma.branch.deleteMany({ where: { id: { in: [dhaka.id, chittagong.id] } } });
 
   if (sequenceBefore) {
     await prisma.employeeIdSequence.update({

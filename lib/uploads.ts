@@ -87,6 +87,37 @@ export function safeFileName(name: string, type: NonNullable<SniffedType>): stri
   return `${base}${EXTENSION_FOR[type]}`;
 }
 
+/**
+ * A Content-Disposition value that cannot break the header.
+ *
+ * `safeFileName` cleans a name on the way IN, at upload. This cleans it on the
+ * way OUT, because the header is built from a database column and not every
+ * writer to that column is an upload: the show-cause reply PDF is named by the
+ * system, and it was named with an em dash. HTTP headers are Latin-1, an em
+ * dash is not, and the reply came back as a 500 with nothing to say why.
+ *
+ * The guard belongs here rather than at each writer. A reader that trusts its
+ * input to have been cleaned by somebody else is a reader that breaks the day
+ * a new writer appears.
+ *
+ * RFC 6266 both-forms, so a name with real characters in it still arrives
+ * readable in a browser while the plain `filename=` stays ASCII for anything
+ * that does not understand the extended form.
+ */
+export function contentDisposition(kind: "inline" | "attachment", name: string): string {
+  const fallback =
+    name
+      .replace(/[^\x20-\x7E]/g, "_")
+      .replace(/["\\]/g, "_")
+      .trim()
+      .slice(0, 120) || "document";
+  const encoded = encodeURIComponent(name).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `${kind}; filename="${fallback}"; filename*=UTF-8''${encoded}`;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;

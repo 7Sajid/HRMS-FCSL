@@ -756,11 +756,11 @@ async function main() {
 
     check(
       "a manager may not read anybody's documents",
-      !canReadDocumentsOf(viewerBoss, rm.employee.id, boss.employee.id),
+      !canReadDocumentsOf(viewerBoss, rm.employee.id, boss.employee.id, "NID"),
     );
     check(
       "but may read their own",
-      canReadDocumentsOf(viewerBoss, boss.employee.id, boss.employee.id),
+      canReadDocumentsOf(viewerBoss, boss.employee.id, boss.employee.id, "NID"),
     );
     check("a manager may not read bank details", !canReadBankDetailsOf(viewerBoss, rm.employee.id, boss.employee.id));
     check("HR may", canReadBankDetailsOf(viewerExec, rm.employee.id, exec.employee.id));
