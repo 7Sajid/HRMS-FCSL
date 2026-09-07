@@ -1,9 +1,53 @@
 # Deploying FCSL HRM
 
-**Status: everything is done except one key.**
+**Status: LIVE.** https://fcsl-hrm-application-fcsl.vercel.app
 
 | | State |
 |---|---|
+| GitHub `sadmanfcsl/FCSL-HRM-Application` | ✅ pushed, private |
+| Vercel `fcsl-hrm-application` (team `fcsl`), region `bom1` | ✅ deployed, Git-linked |
+| Supabase schema — 42 tables, 3 migrations | ✅ applied |
+| Append-only log — UPDATE / DELETE / TRUNCATE | ✅ **all three refused in production** |
+| Seed — 5 leave types, 6 settings, Fri+Sat weekly off, next ID `A 413` | ✅ |
+| First Super Admin, signed in and verified | ✅ |
+| Every environment variable | ✅ set on Production |
+| `/api/cron` — 404 without the secret, runs with it | ✅ verified against production |
+| Every panel route redirects a stranger to `/signin` | ✅ verified against production |
+| Storage bucket `hrm-documents` | ⛔ **create it, PUBLIC OFF — document uploads fail until it exists** |
+
+## Deployment protection
+
+`ssoProtection` was `all_except_custom_domains`, the team default for new projects, which put Vercel's own login in front of everything — including `/api/cron`, which never reached the route even with the right secret. It is now `preview` :
+
+- **Production** — public, guarded by the application's own sign-in. Every route redirects to `/signin`; nothing but the sign-in page is reachable without a session.
+- **Preview** — still locked to the Vercel team.
+
+To put production back behind Vercel's login:
+
+```bash
+curl -X PATCH -H "Authorization: Bearer $VERCEL_TOKEN" -H "Content-Type: application/json" \
+  -d '{"ssoProtection":{"deploymentType":"all_except_custom_domains"}}' \
+  "https://api.vercel.com/v9/projects/fcsl-hrm-application?teamId=team_AIbM9QXJaky539NXnVenaHc8"
+```
+
+## The one thing left
+
+Supabase → Storage → **New bucket** → name it exactly `hrm-documents` → leave **Public OFF**.
+
+Until it exists, everything works except uploading a document. Public would make every scanned NID and bank detail reachable by URL for ever, with no sign-in and no audit line.
+
+## A gotcha worth remembering
+
+**Supabase's direct host has no IPv4.** `db.<ref>.supabase.co` resolves to nothing on a v4-only network — `prisma migrate deploy` reports *"Can't reach database server"*, which reads like the database is down rather than like a missing add-on.
+
+Both URLs therefore go through the pooler, and that is not a workaround:
+
+- `DATABASE_URL` → **6543**, transaction pooler, `pgbouncer=true&connection_limit=5` — for the app
+- `DIRECT_URL` → **5432**, *session* pooler — for migrations, which need a connection held for the whole session
+
+Username is `postgres.<project-ref>`, not `postgres`. The host is `aws-0-ap-south-1.pooler.supabase.com`; `aws-1-` also resolves but rejects the credentials, so picking the wrong one fails at authentication rather than at DNS.
+
+---|---|
 | GitHub `sadmanfcsl/FCSL-HRM-Application` | ✅ pushed, private |
 | Vercel `fcsl-hrm-application` (team `fcsl`) | ✅ created, Git-linked, region `bom1` |
 | Supabase schema — 42 tables, 3 migrations | ✅ applied |
