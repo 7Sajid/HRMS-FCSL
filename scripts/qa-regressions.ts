@@ -28,6 +28,7 @@ import { compressUpload, MAX_EDGE, PORTRAIT_EDGE, savingLine } from "../lib/imag
 import sharp from "sharp";
 import { documentKey, getObject, putObject } from "../lib/storage";
 import { commitImport } from "../lib/import-commit";
+import { BURST, SIGN_IN, isRateLimited, recordAttempt } from "../lib/rate-limit";
 import { consumeEntitlement } from "../lib/leave-service";
 import type { CheckedRow } from "../lib/import";
 import { cleanFixtures } from "./qa-clean";
@@ -92,6 +93,16 @@ const countQueries: ((work: () => Promise<unknown>) => Promise<number>) | null =
 
 function source(path: string): string {
   return readFileSync(join(ROOT, path), "utf8");
+}
+
+/**
+ * Source checks that assert something is ABSENT have to read the code and not
+ * the prose about the code. This file explains at length why it does not log
+ * request headers, and a plain search would find that sentence and call it the
+ * thing it forbids.
+ */
+function stripComments(text: string): string {
+  return text.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/.*$/gm, "");
 }
 
 async function main() {
@@ -1400,6 +1411,79 @@ async function main() {
     "[source] and the filename follows it, so a converted PNG opens",
     /safeFileName\(file\.name, shrunk\.type\)/.test(uploadRoute),
   );
+
+  // ---------------------------------------------------------------------
+  console.log("\n30 · The brakes hold, and a failure is visible to somebody");
+  // ---------------------------------------------------------------------
+  // A key nothing in the running system can produce — the real ones are
+  // `upload:<cuid>` and `export:<cuid>` — so this cannot throttle a real
+  // person even if the cleanup below never runs.
+  const brakeKey = `qa:brake:${Date.now()}`;
+  try {
+    check("an untouched key is not limited", (await isRateLimited(brakeKey, BURST)) === false);
+
+    for (let i = 0; i < BURST.max; i += 1) await recordAttempt(brakeKey);
+    check(
+      `the brake engages at ${BURST.max} in ${BURST.windowMs / 60_000} minutes`,
+      (await isRateLimited(brakeKey, BURST)) === true,
+    );
+    check(
+      "one person hitting it does not limit anybody else",
+      (await isRateLimited(`${brakeKey}:someone-else`, BURST)) === false,
+    );
+    // The whole point of the default argument. Giving the expensive endpoints
+    // a limit of their own must not have loosened the one on the front door.
+    check(
+      "and sign-in still trips at its own, far lower, ten in fifteen minutes",
+      SIGN_IN.max === 10 && SIGN_IN.windowMs === 15 * 60 * 1000,
+    );
+  } finally {
+    await appPrisma.loginAttempt.deleteMany({ where: { key: { startsWith: brakeKey } } });
+  }
+
+  const exportRoute = source("app/api/export/route.ts");
+  check(
+    "[source] both brakes are keyed on the PERSON — a branch is one address, many people",
+    /upload:\$\{context\.user\.id\}/.test(uploadRoute) &&
+      /export:\$\{context\.user\.id\}/.test(exportRoute),
+  );
+  check(
+    "[source] and the upload brake is checked before the body is read",
+    uploadRoute.indexOf("isRateLimited") < uploadRoute.indexOf("request.formData()"),
+  );
+
+  const config = stripComments(source("next.config.ts"));
+  check(
+    "[source] every response carries HSTS, DENY, nosniff and a referrer policy",
+    /Strict-Transport-Security/.test(config) &&
+      /X-Frame-Options/.test(config) &&
+      /X-Content-Type-Options/.test(config) &&
+      /Referrer-Policy/.test(config) &&
+      /frame-ancestors 'none'/.test(config),
+  );
+  check(
+    "[source] HSTS is not preloaded — that is slow and awkward to undo",
+    !/preload/.test(config),
+  );
+
+  const health = source("app/api/health/route.ts");
+  check(
+    "[source] health asks the DATABASE, not merely whether Next is running",
+    /\$queryRaw/.test(health),
+  );
+  check(
+    "[source] and its unauthenticated reply says nothing but ok",
+    !/process\.env|version|hostname/.test(stripComments(health)),
+  );
+
+  const hook = stripComments(source("instrumentation.ts"));
+  check(
+    "[source] uncaught server errors reach the log under a findable marker",
+    /onRequestError/.test(hook) && /fcsl-hrm:error/.test(hook),
+  );
+  // The one that matters: request headers carry the session cookie, and a log
+  // line holding a live session is a way in for anybody who can read the log.
+  check("[source] and no request header is ever logged", !/headers/.test(hook));
 
   if (sequenceBefore) {
     await prisma.employeeIdSequence.update({

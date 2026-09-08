@@ -10,7 +10,7 @@ import { homePathFor } from "@/lib/permissions";
 import { validatePassword } from "@/lib/passwords";
 import { accessClosed } from "@/lib/exit";
 import { todayInDhaka } from "@/lib/dates";
-import { callerAddress, clearFailures, isRateLimited, recordFailure } from "@/lib/rate-limit";
+import { callerAddress, clearFailures, isRateLimited, recordAttempt } from "@/lib/rate-limit";
 
 /**
  * Every export in this file is a callable HTTP endpoint. There are no helpers
@@ -47,7 +47,7 @@ export async function signIn(_previous: unknown, formData: FormData): Promise<Ac
   const user = await prisma.user.findUnique({ where: { email }, include: { employee: true } });
 
   const refuse = async (reason: string) => {
-    await recordFailure(ip);
+    await recordAttempt(ip);
     await recordQuietly({
       action: "auth.sign_in_failed",
       actor: user ? actorFrom({ ...user, fullName: user.employee?.fullName ?? user.email }) : null,

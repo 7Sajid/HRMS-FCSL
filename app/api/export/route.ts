@@ -4,6 +4,7 @@ import { currentIp, getSessionContext } from "@/lib/auth";
 import { actorFrom, recordQuietly } from "@/lib/audit";
 import { can, canReadBankDetailsOf, visibleEmployeeWhere } from "@/lib/permissions";
 import { csvResponse, exportFileName, toCsv } from "@/lib/csv";
+import { BURST, isRateLimited, recordAttempt } from "@/lib/rate-limit";
 import { formatDate, formatDateTime } from "@/lib/dates";
 import { certificateStatus } from "@/lib/certificate";
 import { actionLabel } from "@/lib/audit";
@@ -26,6 +27,15 @@ const EXPORT_CAP = 5000;
 export async function GET(request: Request): Promise<Response> {
   const context = await getSessionContext();
   if (!context) return new Response("Not found", { status: 404 });
+
+  // The most expensive read in the system — up to five thousand rows joined
+  // across several tables — and the one an auditor asks about. Per person, for
+  // the same reason as uploads: a branch is one address but many people.
+  const limitKey = `export:${context.user.id}`;
+  if (await isRateLimited(limitKey, BURST)) {
+    return new Response("Too many exports at once. Wait a few minutes.", { status: 429 });
+  }
+  await recordAttempt(limitKey);
 
   const url = new URL(request.url);
   const type = url.searchParams.get("type") ?? "employees";

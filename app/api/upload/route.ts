@@ -5,6 +5,7 @@ import { getSessionContext, currentIp } from "@/lib/auth";
 import { actorFrom, record } from "@/lib/audit";
 import { documentSpec } from "@/lib/documents";
 import { checkUpload, safeFileName } from "@/lib/uploads";
+import { BURST, isRateLimited, recordAttempt } from "@/lib/rate-limit";
 import { compressUpload, PORTRAIT_EDGE, savingLine } from "@/lib/images";
 import { documentKey, putObject } from "@/lib/storage";
 import { fromISODate } from "@/lib/dates";
@@ -24,6 +25,21 @@ export async function POST(request: Request): Promise<Response> {
     return NextResponse.json({ error: "Please sign in again." }, { status: 401 });
   }
   const employee = context.employee;
+
+  // Keyed on the person rather than the address, because a branch office sits
+  // behind one NAT and limiting that would throttle a room full of new joiners
+  // uploading on the same morning. Counted before the body is read, so a flood
+  // costs an index scan rather than ten megabytes of transfer and a resize.
+  //
+  // A brake, not a wall — everyone who reaches it is signed in and audited.
+  const limitKey = `upload:${context.user.id}`;
+  if (await isRateLimited(limitKey, BURST)) {
+    return NextResponse.json(
+      { error: "That is a great many uploads at once. Wait a few minutes and try again." },
+      { status: 429 },
+    );
+  }
+  await recordAttempt(limitKey);
 
   const form = await request.formData();
   const kind = String(form.get("kind") ?? "") as DocumentKind;
