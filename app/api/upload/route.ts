@@ -5,6 +5,7 @@ import { getSessionContext, currentIp } from "@/lib/auth";
 import { actorFrom, record } from "@/lib/audit";
 import { documentSpec } from "@/lib/documents";
 import { checkUpload, safeFileName } from "@/lib/uploads";
+import { compressUpload, PORTRAIT_EDGE, savingLine } from "@/lib/images";
 import { documentKey, putObject } from "@/lib/storage";
 import { fromISODate } from "@/lib/dates";
 
@@ -79,14 +80,30 @@ export async function POST(request: Request): Promise<Response> {
     );
   }
 
-  const key = documentKey(employee.id, kind, file.name);
-  const storedName = safeFileName(file.name, checked.type);
+  // Shrunk before anything is written. A phone photograph of a national ID
+  // arrives at six or eight megabytes and reads identically at three hundred
+  // kilobytes; over four hundred staff that is the difference between a few
+  // gigabytes of storage and a hundred. PDFs pass through untouched, and an
+  // image that cannot be read or would only get bigger is kept exactly as it
+  // came — see lib/images.ts.
+  const shrunk = await compressUpload(
+    bytes,
+    checked.type,
+    // A passport photograph is a face in a box; it needs nothing like a page.
+    kind === "PHOTOGRAPH" ? PORTRAIT_EDGE : undefined,
+  );
+
+  const key = documentKey(employee.id, kind, `x.${shrunk.type === "application/pdf" ? "pdf" : "jpg"}`);
+  // The name and the extension follow what was actually STORED, not what was
+  // sent: a PNG that came out as a JPEG must not be filed as cv.png, or it
+  // fails to open on somebody's desk later.
+  const storedName = safeFileName(file.name, shrunk.type);
 
   // Every refusal is now behind us, so the file can be written. Storage before
   // the row, deliberately: a row pointing at a file that was never written is
   // worse than a file with no row, because the row is what HR is told to
   // review and the file is what they would find missing.
-  await putObject(key, bytes, checked.type);
+  await putObject(key, shrunk.bytes, shrunk.type);
 
   const ip = await currentIp();
   const document = await prisma.$transaction(async (tx) => {
@@ -104,8 +121,8 @@ export async function POST(request: Request): Promise<Response> {
         label,
         storageKey: key,
         originalName: storedName,
-        mimeType: checked.type,
-        size: bytes.length,
+        mimeType: shrunk.type,
+        size: shrunk.bytes.length,
         status: "PENDING",
         issueDate,
         expiryDate,
@@ -120,7 +137,16 @@ export async function POST(request: Request): Promise<Response> {
       targetType: "employee",
       targetId: employee.id,
       targetLabel: employee.fullName,
-      detail: { kind, fileName: storedName, size: bytes.length },
+      detail: {
+        kind,
+        fileName: storedName,
+        size: shrunk.bytes.length,
+        // Written down because somebody will one day ask why the file in the
+        // record is smaller than the one they remember sending.
+        ...(shrunk.changed
+          ? { compressed: savingLine(shrunk.originalSize, shrunk.bytes.length) }
+          : {}),
+      },
       ip,
       tx,
     });
@@ -128,5 +154,11 @@ export async function POST(request: Request): Promise<Response> {
     return created;
   });
 
-  return NextResponse.json({ ok: true, id: document.id, name: storedName });
+  return NextResponse.json({
+    ok: true,
+    id: document.id,
+    name: storedName,
+    size: shrunk.bytes.length,
+    saved: shrunk.changed ? savingLine(shrunk.originalSize, shrunk.bytes.length) : null,
+  });
 }

@@ -24,6 +24,8 @@ import { calendarForRange, ensureEntitlements } from "../lib/leave-service";
 import { maximumLeaveDays } from "../lib/leave";
 import { releaseLetterTemplate } from "../lib/exit";
 import { releaseLetterPdf } from "../lib/pdf";
+import { compressUpload, MAX_EDGE, PORTRAIT_EDGE, savingLine } from "../lib/images";
+import sharp from "sharp";
 import { documentKey, getObject, putObject } from "../lib/storage";
 import { commitImport } from "../lib/import-commit";
 import { consumeEntitlement } from "../lib/leave-service";
@@ -1312,6 +1314,91 @@ async function main() {
   check(
     "[source] the retirement line carries the name, not the word \"department\"",
     /targetLabel: `\$\{named\.name\} \(\$\{kind\}\)`/.test(source("app/actions/hr-settings.ts")),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n29 · Uploads are shrunk without becoming unreadable (§6.1)");
+  // ---------------------------------------------------------------------
+  const madeUp = async (w: number, h: number, quality = 92) => {
+    const px = Buffer.alloc(w * h * 3);
+    for (let y = 0; y < h; y += 1) {
+      for (let x = 0; x < w; x += 1) {
+        const i = (y * w + x) * 3;
+        px[i] = (x * 255) / w;
+        px[i + 1] = (y * 255) / h;
+        px[i + 2] = ((x ^ y) % 97) * 2;
+      }
+    }
+    return new Uint8Array(
+      await sharp(px, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality }).toBuffer(),
+    );
+  };
+
+  const phonePhoto = await madeUp(4032, 3024);
+  const shrunk = await compressUpload(phonePhoto, "image/jpeg");
+  check(
+    `a 12-megapixel photograph shrinks — ${savingLine(phonePhoto.length, shrunk.bytes.length)}`,
+    shrunk.changed && shrunk.bytes.length < phonePhoto.length,
+  );
+  const shrunkMeta = await sharp(shrunk.bytes).metadata();
+  check(
+    `and stays big enough to read — ${shrunkMeta.width}x${shrunkMeta.height}`,
+    Math.max(shrunkMeta.width ?? 0, shrunkMeta.height ?? 0) === MAX_EDGE,
+  );
+
+  const portrait = await compressUpload(await madeUp(3024, 4032), "image/jpeg", PORTRAIT_EDGE);
+  const portraitMeta = await sharp(portrait.bytes).metadata();
+  check(
+    "a passport photograph is held to a smaller size still",
+    Math.max(portraitMeta.width ?? 0, portraitMeta.height ?? 0) === PORTRAIT_EDGE,
+  );
+
+  // The trap: a phone writes rotation into EXIF and leaves the pixels alone.
+  // Strip the tag without applying it and every portrait lands sideways.
+  const sideways = new Uint8Array(
+    await sharp({ create: { width: 1200, height: 600, channels: 3, background: "#6e1616" } })
+      .withMetadata({ orientation: 6 })
+      .jpeg()
+      .toBuffer(),
+  );
+  const uprightMeta = await sharp((await compressUpload(sideways, "image/jpeg")).bytes).metadata();
+  check(
+    "a photograph the phone marked as rotated comes out the right way up",
+    (uprightMeta.height ?? 0) > (uprightMeta.width ?? 0) && (uprightMeta.orientation ?? 1) === 1,
+  );
+
+  const pdfIn = new Uint8Array(Buffer.from("%PDF-1.7\nleave me alone\n"));
+  const pdfOut = await compressUpload(pdfIn, "application/pdf");
+  check(
+    "a PDF is passed through byte for byte",
+    !pdfOut.changed && Buffer.from(pdfOut.bytes).equals(Buffer.from(pdfIn)),
+  );
+
+  const alreadySmall = new Uint8Array(
+    await sharp({ create: { width: 50, height: 50, channels: 3, background: "#ffffff" } })
+      .jpeg({ quality: 20 })
+      .toBuffer(),
+  );
+  check(
+    "nothing is ever handed back bigger than it arrived",
+    (await compressUpload(alreadySmall, "image/jpeg")).bytes.length <= alreadySmall.length,
+  );
+
+  const broken = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10]);
+  const kept = await compressUpload(broken, "image/jpeg");
+  check(
+    "a file that cannot be read is kept, not lost",
+    !kept.changed && kept.bytes.length === broken.length,
+  );
+
+  const uploadRoute = source("app/api/upload/route.ts");
+  check(
+    "[source] the row records what was STORED, not what was sent",
+    /mimeType: shrunk\.type/.test(uploadRoute) && /size: shrunk\.bytes\.length/.test(uploadRoute),
+  );
+  check(
+    "[source] and the filename follows it, so a converted PNG opens",
+    /safeFileName\(file\.name, shrunk\.type\)/.test(uploadRoute),
   );
 
   if (sequenceBefore) {

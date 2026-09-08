@@ -50,12 +50,15 @@ export function UploadBox({
   const inputRef = useRef<HTMLInputElement>(null);
   const [error, setError] = useState("");
   const [percent, setPercent] = useState<number | null>(null);
+  /** "1.9 MB → 372 KB (81% smaller)", when the server shrank it. */
+  const [saved, setSaved] = useState("");
   const [, startTransition] = useTransition();
   const [issueDate, setIssueDate] = useState("");
   const [expiryDate, setExpiryDate] = useState("");
 
   const upload = (file: File) => {
     setError("");
+    setSaved("");
     if (capturesDates && (!issueDate || !expiryDate)) {
       setError("Enter the issue date and expiry date first.");
       if (inputRef.current) inputRef.current.value = "";
@@ -79,6 +82,15 @@ export function UploadBox({
       setPercent(null);
       if (inputRef.current) inputRef.current.value = "";
       if (xhr.status >= 200 && xhr.status < 300) {
+        // Said out loud, because a person who sends a six-megabyte photograph
+        // and later finds a four-hundred-kilobyte file in their record should
+        // have been told, not left to wonder whether it uploaded properly.
+        try {
+          const reply = JSON.parse(xhr.responseText);
+          if (reply.saved) setSaved(String(reply.saved));
+        } catch {
+          // The upload worked; a missing summary is not worth an error.
+        }
         startTransition(() => router.refresh());
         return;
       }
@@ -174,6 +186,12 @@ export function UploadBox({
       {error && (
         <p className="mt-2 text-xs text-red-600" role="alert">
           {error}
+        </p>
+      )}
+
+      {saved && (
+        <p className="mt-2 text-xs text-ink-500">
+          Saved and made smaller — {saved}. It is still the same document, and still readable.
         </p>
       )}
 
