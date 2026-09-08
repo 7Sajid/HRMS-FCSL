@@ -1061,6 +1061,19 @@ model Requisition {
   /// Money/expense only. Decimal, never a float.
   amount  Decimal?        @db.Decimal(14, 2)
 
+  /// The escalation threshold as it stood when this was RAISED (§7.2).
+  ///
+  /// Stored rather than looked up at decision time, for the same reason leave
+  /// rules are dated: the chain a request travels must not change underneath
+  /// it. Reading the live setting meant that raising the threshold while a
+  /// ৳60,000 requisition sat in the HR Head's inbox quietly removed the Super
+  /// Admin from its chain, and the HR Head's approval became final on a
+  /// request that had needed two signatures when it was made.
+  ///
+  /// Null on rows raised before this column existed; those fall back to the
+  /// current setting, which is the best that can be said about them.
+  escalationThreshold Decimal? @db.Decimal(14, 2)
+
   status              RequisitionStatus @default(PENDING)
   currentStep         Int               @default(0)
   currentApproverRole Role?
@@ -1179,6 +1192,17 @@ model Exit {
   completedAt     DateTime? @db.Timestamptz(3)
   completedById   String?
   completedByName String    @default("")
+
+  /// An exit recorded by mistake, or a resignation withdrawn (§6.6).
+  ///
+  /// Marked, never deleted — rule 8. The employee goes back to ACTIVE and
+  /// their certificate comes back with them; the ACCOUNT stays closed until
+  /// the Super Admin re-opens it, because §5.5 gives activating an account to
+  /// them alone. HR corrects the record, the Super Admin controls the door.
+  reversedAt     DateTime? @db.Timestamptz(3)
+  reversedById   String?
+  reversedByName String    @default("")
+  reversalReason String    @default("")
 
   /// lastWorkingDay + one year (§12.2). On this date the uploaded FILES are
   /// removed; the employee record itself is kept permanently so the headcount

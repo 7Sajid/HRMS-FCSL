@@ -1,8 +1,8 @@
 import { prisma } from "@/lib/db";
 import { requireEmployee } from "@/lib/auth";
-import { formatDate, formatMonth, toISODate, todayInDhaka } from "@/lib/dates";
+import { calendarDate, formatDate, formatMonth, toISODate, todayInDhaka } from "@/lib/dates";
 import { chainStart, waitingWith } from "@/lib/approval-chain";
-import { calendarFor, ensureEntitlements, leaveTypesFor } from "@/lib/leave-service";
+import { calendarForRange, ensureEntitlements, leaveTypesFor } from "@/lib/leave-service";
 import { documentLabel } from "@/lib/documents";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
@@ -26,7 +26,10 @@ export default async function Page() {
 
   const [types, calendar, requests, sheet, attachments] = await Promise.all([
     leaveTypesFor(employee, year),
-    calendarFor(year),
+    // This year AND next: the preview on this screen has to be able to price a
+    // week off over Christmas, which is two leave years. The server checks it
+    // again over the exact range the person picked.
+    calendarForRange(calendarDate(year, 1, 1), calendarDate(year + 1, 12, 31)),
     prisma.leaveRequest.findMany({
       where: { employeeId: employee.id },
       include: {

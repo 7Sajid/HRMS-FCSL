@@ -3,6 +3,7 @@ import { calendarDate, toISODate } from "./dates";
 import {
   allocateFifo,
   audienceIncludes,
+  carriedForwardDays,
   computeBalance,
   isUncounted,
   planLeaveDays,
@@ -11,6 +12,7 @@ import {
   ruleOn,
   weeklyOffOn,
   workingDayCost,
+  yearsSpanned,
   type Bucket,
   type PlannedDay,
 } from "./leave";
@@ -199,7 +201,16 @@ describe("FIFO — carry-forward burns before this year's grant", () => {
 describe("§6.2 — what the system checks before accepting an application", () => {
   const base = {
     today: d(2026, 9, 1),
-    balance: computeBalance([{ id: "a", fromDate: d(2026, 1, 1), toDate: d(2026, 12, 31), days: 10 }], 0, 0),
+    balances: [
+      {
+        year: 2026,
+        balance: computeBalance(
+          [{ id: "a", fromDate: d(2026, 1, 1), toDate: d(2026, 12, 31), days: 10 }],
+          0,
+          0,
+        ),
+      },
+    ],
     overBalance: "REFUSE" as const,
     lateReason: "",
     overlappingDates: new Set<string>(),
@@ -238,7 +249,16 @@ describe("§6.2 — what the system checks before accepting an application", () 
   it("2 — counts days already applied for and waiting", () => {
     const withPending = preflight({
       ...forDates(d(2026, 9, 7), d(2026, 9, 11)),
-      balance: computeBalance([{ id: "a", fromDate: d(2026, 1, 1), toDate: d(2026, 12, 31), days: 10 }], 0, 8),
+      balances: [
+        {
+          year: 2026,
+          balance: computeBalance(
+            [{ id: "a", fromDate: d(2026, 1, 1), toDate: d(2026, 12, 31), days: 10 }],
+            0,
+            8,
+          ),
+        },
+      ],
     });
     expect(withPending.ok).toBe(false);
     expect(withPending.errors.some((e) => /already applied for and waiting/.test(e))).toBe(true);
@@ -317,7 +337,7 @@ describe("§6.2 — what the system checks before accepting an application", () 
 describe("a type with no entitlement is not a balance (§6.2)", () => {
   const unpaid = {
     today: d(2026, 9, 1),
-    balance: computeBalance([], 0, 0),
+    balances: [{ year: 2026, balance: computeBalance([], 0, 0) }],
     overBalance: "WARN" as const,
     lateReason: "",
     overlappingDates: new Set<string>(),
@@ -400,5 +420,106 @@ describe("who a leave type is offered to (§6.2)", () => {
     // A leave page with no leave types on it is a person who cannot apply.
     expect(audienceIncludes(undefined, "Male")).toBe(true);
     expect(audienceIncludes(null, "Male")).toBe(true);
+  });
+});
+
+describe("§6.2 — leave that crosses New Year", () => {
+  it("knows both years a Christmas week touches", () => {
+    expect(yearsSpanned(d(2026, 12, 28), d(2027, 1, 4))).toEqual([2026, 2027]);
+    expect(yearsSpanned(d(2026, 9, 7), d(2026, 9, 11))).toEqual([2026]);
+  });
+
+  it("checks each year against its own balance", () => {
+    const from = d(2026, 12, 28);
+    const to = d(2027, 1, 8);
+    const full = (year: number, days: number) =>
+      computeBalance([{ id: String(year), fromDate: d(year, 1, 1), toDate: d(year, 12, 31), days }], 0, 0);
+
+    // Nothing left in 2026, plenty in 2027. The December days are the problem
+    // and the message has to say which year it is talking about.
+    const result = preflight({
+      from,
+      to,
+      today: d(2026, 12, 1),
+      days: planLeaveDays(from, to, new Set()),
+      balances: [
+        { year: 2026, balance: full(2026, 0) },
+        { year: 2027, balance: full(2027, 10) },
+      ],
+      overBalance: "REFUSE",
+      lateReason: "",
+      overlappingDates: new Set<string>(),
+      attachmentRequiredAfterDays: null,
+      hasAttachment: false,
+      uncounted: false,
+      teamAwayCount: 0,
+      teamSize: 5,
+    });
+    expect(result.ok).toBe(false);
+    expect(result.errors.some((e) => /in 2026/.test(e))).toBe(true);
+    expect(result.errors.some((e) => /in 2027/.test(e))).toBe(false);
+  });
+
+  it("says nothing about the year when there is only one", () => {
+    const from = d(2026, 9, 7);
+    const to = d(2026, 9, 25);
+    const result = preflight({
+      from,
+      to,
+      today: d(2026, 9, 1),
+      days: planLeaveDays(from, to, new Set()),
+      balances: [
+        {
+          year: 2026,
+          balance: computeBalance(
+            [{ id: "a", fromDate: d(2026, 1, 1), toDate: d(2026, 12, 31), days: 10 }],
+            0,
+            0,
+          ),
+        },
+      ],
+      overBalance: "REFUSE",
+      lateReason: "",
+      overlappingDates: new Set<string>(),
+      attachmentRequiredAfterDays: null,
+      hasAttachment: false,
+      uncounted: false,
+      teamAwayCount: 0,
+      teamSize: 5,
+    });
+    expect(result.ok).toBe(false);
+    // The ordinary message, unchanged by the year-by-year rewrite.
+    expect(result.errors.some((e) => /more than the balance/.test(e))).toBe(true);
+    expect(result.errors.some((e) => / in 20\d\d /.test(e))).toBe(false);
+  });
+});
+
+describe("§12.2 — carrying leave into next year", () => {
+  it("carries what was not used, up to the cap", () => {
+    expect(carriedForwardDays(20, 5, 40)).toBe(15);
+    expect(carriedForwardDays(20, 0, 10)).toBe(10);
+  });
+
+  it("carries nothing when it was all taken, and never a negative", () => {
+    expect(carriedForwardDays(20, 20, 40)).toBe(0);
+    // A shortfall — granted more than they had — must not carry a debt.
+    expect(carriedForwardDays(20, 25, 40)).toBe(0);
+  });
+
+  it("carries everything when there is no cap", () => {
+    expect(carriedForwardDays(20, 5, null)).toBe(15);
+  });
+
+  it("draws carried days before this year's grant", () => {
+    // Both open on 1 January, so a sort on the date alone cannot separate
+    // them — and the carried ones are the ones that lapse.
+    const carried = { id: "carried", fromDate: d(2027, 1, 1), toDate: d(2027, 12, 31), days: 5, carriedForward: true, alreadyUsed: 0 };
+    const granted = { id: "granted", fromDate: d(2027, 1, 1), toDate: d(2027, 12, 31), days: 20, carriedForward: false, alreadyUsed: 0 };
+    const { allocations } = allocateFifo(
+      [granted, carried],
+      planLeaveDays(d(2027, 3, 1), d(2027, 3, 3), new Set()),
+    );
+    expect(allocations.length).toBeGreaterThan(0);
+    expect(allocations.every((a) => a.bucketId === "carried")).toBe(true);
   });
 });

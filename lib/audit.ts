@@ -99,6 +99,7 @@ export type AuditAction =
   | "exit.recorded"
   | "exit.clearance_cleared"
   | "exit.completed"
+  | "exit.reversed"
   // Compliance
   | "showcause.issued"
   | "showcause.viewed"
@@ -196,6 +197,7 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "exit.recorded": "Exit recorded",
   "exit.clearance_cleared": "Clearance item cleared",
   "exit.completed": "Exit completed",
+  "exit.reversed": "Exit reversed",
 
   "showcause.issued": "Show-cause letter issued",
   "showcause.viewed": "Show-cause file opened",
@@ -316,6 +318,7 @@ export const ACTION_GROUPS: { label: string; actions: AuditAction[] }[] = [
       "exit.recorded",
       "exit.clearance_cleared",
       "exit.completed",
+      "exit.reversed",
     ],
   },
   {

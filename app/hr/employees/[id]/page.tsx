@@ -12,6 +12,7 @@ import { Badge } from "@/components/ui/Feedback";
 import { DataList, DataRow } from "@/components/ui/DataList";
 import { AssignmentForm } from "@/components/hr/AssignmentForm";
 import { ContactChange, CorrectionRequestRow } from "@/components/hr/PendingApprovals";
+import { ReissuePassword } from "@/components/hr/ReissuePassword";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -87,6 +88,26 @@ export default async function Page({ params }: Props) {
           </div>
         }
       />
+
+      {can(context.viewer, "accounts.create") && employee.status === "ACTIVE" && (
+        // "If you lose it, issue a new one from their file" — said on the
+        // create-account screen and on the sign-in page, and until now there
+        // was no such thing. A temporary password lasts seven days; without
+        // this anybody who let theirs lapse was locked out for good.
+        <section className="mb-6">
+          <Card className="p-6">
+            <h2 className="mb-1 text-xs font-semibold tracking-widest text-ink-400">SIGNING IN</h2>
+            <p className="mb-4 text-sm text-ink-500">
+              {employee.user.disabledAt
+                ? "This account is closed. Re-open it before issuing a password."
+                : "For somebody who has lost their password, or whose temporary one has expired."}
+            </p>
+            {!employee.user.disabledAt && (
+              <ReissuePassword employeeId={employee.id} fullName={employee.fullName} />
+            )}
+          </Card>
+        </section>
+      )}
 
       {(pendingContacts.length > 0 || employee.correctionRequests.length > 0) && (
         <section className="mb-6 space-y-3">

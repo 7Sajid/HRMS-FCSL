@@ -7,10 +7,10 @@ import { actorFrom, record } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
 import { chainStart, waitingWith } from "@/lib/approval-chain";
 import { fromISODate, formatDate, todayInDhaka } from "@/lib/dates";
-import { planLeaveDays, preflight, workingDayCost } from "@/lib/leave";
+import { planLeaveDays, preflight, workingDayCost, yearsSpanned } from "@/lib/leave";
 import {
   bookedDates,
-  calendarFor,
+  calendarForRange,
   consumeEntitlement,
   ensureEntitlements,
   leaveTypesFor,
@@ -59,17 +59,30 @@ export async function applyForLeave(_previous: unknown, formData: FormData): Pro
     if (!own) return { error: "Pick one of your own uploaded documents." };
   }
 
-  const year = from.getUTCFullYear();
-  await ensureEntitlements(employee, year);
+  // Every year the dates touch, not just the first one. A week off over
+  // Christmas is two leave years, and both of them have holidays and an
+  // entitlement of their own.
+  const years = yearsSpanned(from, to);
+  for (const year of years) await ensureEntitlements(employee, year);
 
-  const [types, calendar, booked] = await Promise.all([
-    leaveTypesFor(employee, year),
-    calendarFor(year),
+  const [byYear, calendar, booked] = await Promise.all([
+    Promise.all(years.map(async (year) => ({ year, types: await leaveTypesFor(employee, year) }))),
+    calendarForRange(from, to),
     bookedDates(employee.id),
   ]);
 
+  const types = byYear[0]!.types;
   const type = types.find((t) => t.id === leaveTypeId);
   if (!type) return { error: "Pick a leave type." };
+
+  // The same leave type in each year, with that year's balance against it. A
+  // type retired between the two years simply has no entry for the later one.
+  const balances = byYear
+    .map(({ year, types: yearTypes }) => {
+      const match = yearTypes.find((t) => t.id === leaveTypeId);
+      return match ? { year, balance: match.balance } : null;
+    })
+    .filter((entry): entry is { year: number; balance: (typeof type)["balance"] } => entry !== null);
 
   const days = planLeaveDays(
     from,
@@ -88,7 +101,7 @@ export async function applyForLeave(_previous: unknown, formData: FormData): Pro
     to,
     today: todayInDhaka(),
     days,
-    balance: type.balance,
+    balances,
     overBalance: type.overBalance,
     lateReason,
     overlappingDates: booked,

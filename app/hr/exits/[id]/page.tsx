@@ -6,11 +6,7 @@ import { formatDate, formatDateTime } from "@/lib/dates";
 import { AREA_LABEL, exitBlockers } from "@/lib/exit";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Badge, NoticeBox } from "@/components/ui/Feedback";
-import {
-  ClearanceItem,
-  CompleteExitButton,
-  RecordExitForm,
-} from "@/components/hr/ExitPanel";
+import { ClearanceItem, CompleteExitButton, RecordExitForm, ReverseExitButton } from "@/components/hr/ExitPanel";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -75,7 +71,27 @@ export default async function Page({ params }: Props) {
                 value={`${formatDate(exit.documentsPurgeAfter)} — the record itself is kept for ever`}
               />
               {exit.reasonNote && <Row label="Note" value={exit.reasonNote} />}
+              {exit.reversedAt && (
+                <Row
+                  label="Undone"
+                  value={`${exit.reversedByName}, ${formatDateTime(exit.reversedAt)} — ${exit.reversalReason}`}
+                />
+              )}
             </dl>
+
+            {/* An exit recorded against the wrong person, or a resignation
+                withdrawn. There was no way back at all before this: the Super
+                Admin's re-enable refused with "Reverse the exit first" and
+                nothing in the software could. */}
+            {!exit.reversedAt && (
+              <div className="mt-5 border-t border-ink-300/40 pt-5">
+                <ReverseExitButton
+                  employeeId={employee.id}
+                  fullName={employee.fullName}
+                  wasCompleted={exit.completedAt !== null}
+                />
+              </div>
+            )}
           </Card>
 
           {employee.terminalAssignments.length > 0 && (
@@ -100,7 +116,7 @@ export default async function Page({ params }: Props) {
             </Card>
           )}
 
-          {employee.certificates.length > 0 && (
+          {employee.certificates.length > 0 && !exit.reversedAt && (
             <NoticeBox tone="brand">
               Their RM certificate will be surrendered when you finish the exit, and they drop out of
               the expiry register.
@@ -132,10 +148,20 @@ export default async function Page({ params }: Props) {
             <NoticeBox tone="success">
               <p className="font-medium">
                 Finished on {formatDateTime(exit.completedAt)} by {exit.completedByName}.
+                {exit.reversedAt ? " Since undone." : ""}
               </p>
               <p className="mt-1">
-                {employee.employeeId} is marked Left. The ID is never reused and the record is kept
-                whole, so the headcount and joiner-leaver reports stay correct.
+                {exit.reversedAt ? (
+                  <>
+                    {employee.fullName} is back to Active and counts in the headcount again. Their
+                    login is still closed — only the Super Admin re-opens an account.
+                  </>
+                ) : (
+                  <>
+                    {employee.employeeId} is marked Left. The ID is never reused and the record is
+                    kept whole, so the headcount and joiner-leaver reports stay correct.
+                  </>
+                )}
               </p>
             </NoticeBox>
           ) : (

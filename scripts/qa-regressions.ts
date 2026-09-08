@@ -8,7 +8,18 @@ import { employeeRecordScope } from "../lib/permissions";
 import { showCauseReplyPdf } from "../lib/pdf";
 import { headcount, documentReport, leaveReport } from "../lib/reports";
 import { leaveTypesFor, leaveTypesForMany } from "../lib/leave-service";
-import { audienceIncludes, isUncounted, planLeaveDays, preflight } from "../lib/leave";
+import {
+  audienceIncludes,
+  carriedForwardDays,
+  isUncounted,
+  planLeaveDays,
+  preflight,
+  workingDayCost,
+  yearsSpanned,
+} from "../lib/leave";
+import { decideRequisition } from "../lib/requisition-decide";
+import { enableAccountAs } from "../lib/accounts";
+import { calendarForRange, ensureEntitlements } from "../lib/leave-service";
 import { documentKey, getObject, putObject } from "../lib/storage";
 import { commitImport } from "../lib/import-commit";
 import { consumeEntitlement } from "../lib/leave-service";
@@ -645,7 +656,7 @@ async function main() {
       to: from,
       today: todayInDhaka(),
       days: planLeaveDays(from, from, new Set()),
-      balance: { entitled: 0, taken: 0, pending: 1, available: 0, applicable: -1 },
+      balances: [{ year: 2026, balance: { entitled: 0, taken: 0, pending: 1, available: 0, applicable: -1 } }],
       overBalance: "WARN",
       lateReason: "",
       overlappingDates: new Set<string>(),
@@ -691,7 +702,7 @@ async function main() {
       to: from,
       today: calendarDate(2026, 9, 1),
       days: planLeaveDays(from, from, new Set()),
-      balance: { entitled: 10, taken: 0, pending: 0, available: 10, applicable: 10 },
+      balances: [{ year: 2026, balance: { entitled: 10, taken: 0, pending: 0, available: 10, applicable: 10 } }],
       overBalance: "REFUSE",
       lateReason: "",
       overlappingDates: new Set(["2026-10-19"]),
@@ -716,6 +727,286 @@ async function main() {
   check(
     "[source] and every table's scroll box can shrink, wherever it is put",
     /min-w-0 overflow-x-auto/.test(source("components/ui/Table.tsx")),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n16 · A replacement password can actually be issued (§4)");
+  // ---------------------------------------------------------------------
+  check(
+    "[source] the staff file offers it — the place both screens point people to",
+    /<ReissuePassword/.test(source("app/hr/employees/[id]/page.tsx")),
+  );
+  check(
+    "[source] and the joiners queue offers it beside the Password expired badge",
+    /<ReissuePassword/.test(source("app/hr/joiners/page.tsx")),
+  );
+  check(
+    "[source] gated on the capability the action itself checks",
+    /can\(context\.viewer, "accounts\.create"\)/.test(source("app/hr/joiners/page.tsx")) &&
+      /can\(context\.viewer, "accounts\.create"\)/.test(source("app/hr/employees/[id]/page.tsx")),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n17 · A requisition keeps the chain it was raised under (§7.2)");
+  // ---------------------------------------------------------------------
+  const setting = await prisma.setting.findUnique({
+    where: { key: "requisition.escalationThreshold" },
+  });
+  const originalThreshold = setting?.value ?? "50000";
+  await prisma.setting.upsert({
+    where: { key: "requisition.escalationThreshold" },
+    update: { value: "50000" },
+    create: { key: "requisition.escalationThreshold", value: "50000" },
+  });
+
+  const raiser = await fixture("qa-reg-raiser@qa.fcsl.invalid", "QA Raiser", {});
+  const headOfHr = await fixture("qa-reg-hrhead@qa.fcsl.invalid", "QA HR Head", {});
+  const bigOne = await prisma.requisition.create({
+    data: {
+      raisedById: raiser.employeeId,
+      raisedByName: "QA Raiser",
+      type: "MONEY_EXPENSE",
+      details: { purpose: "regression" },
+      amount: "60000.00",
+      // Raised under 50,000, so it needs the Super Admin after the HR Head.
+      escalationThreshold: "50000.00",
+      status: "PENDING",
+      currentStep: 0,
+      currentApproverRole: "HR_HEAD",
+    },
+  });
+
+  // HR moves the threshold while it waits in the inbox.
+  await prisma.setting.update({
+    where: { key: "requisition.escalationThreshold" },
+    data: { value: "100000" },
+  });
+  const passedOn = await decideRequisition(
+    { userId: headOfHr.userId, role: "HR_HEAD", employeeId: headOfHr.employeeId, name: "QA HR Head" },
+    bigOne.id,
+    "APPROVE",
+    "Regression approval",
+  );
+  const afterHead = await prisma.requisition.findUnique({ where: { id: bigOne.id } });
+  check(
+    "the HR Head's approval passes it on rather than finishing it",
+    "ok" in passedOn && passedOn.outcome === "passed",
+    "ok" in passedOn ? passedOn.outcome : passedOn.error,
+  );
+  check(
+    "and it is still waiting with the Super Admin, as it was when raised",
+    afterHead?.status === "PENDING" && afterHead?.currentApproverRole === "SUPER_ADMIN",
+    `${afterHead?.status} / ${afterHead?.currentApproverRole}`,
+  );
+  await prisma.setting.update({
+    where: { key: "requisition.escalationThreshold" },
+    data: { value: originalThreshold },
+  });
+  check(
+    "[source] the threshold is frozen onto the row when it is raised",
+    /escalationThreshold: threshold\.toFixed\(2\)/.test(source("app/actions/requisitions.ts")),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n18 · Leave over New Year is priced and paid for by both years");
+  // ---------------------------------------------------------------------
+  check("both years of a Christmas week are seen", yearsSpanned(
+    calendarDate(2026, 12, 28),
+    calendarDate(2027, 1, 4),
+  ).join() === "2026,2027");
+
+  const holidayName = "QA regression New Year holiday";
+  await prisma.holiday.deleteMany({ where: { name: holidayName } });
+  await prisma.holiday.create({
+    data: { date: calendarDate(2027, 1, 4), name: holidayName, year: 2027 },
+  });
+  const spanning = await calendarForRange(calendarDate(2026, 12, 28), calendarDate(2027, 1, 4));
+  const oneYearOnly = await calendarForRange(calendarDate(2026, 12, 28), calendarDate(2026, 12, 31));
+  check(
+    "next January's public holiday is known to a December application",
+    spanning.holidays.has("2027-01-04") && !oneYearOnly.holidays.has("2027-01-04"),
+  );
+
+  const crosser = await fixture("qa-reg-crosser@qa.fcsl.invalid", "QA Crosser", {
+    joiningDate: calendarDate(2020, 1, 1),
+  });
+  const crosserRow = (await prisma.employee.findUnique({ where: { id: crosser.employeeId } }))!;
+  for (const year of yearsSpanned(calendarDate(2026, 12, 28), calendarDate(2027, 1, 8))) {
+    await ensureEntitlements(crosserRow, year);
+  }
+  const casualType = (await prisma.leaveType.findFirst({ where: { code: "CASUAL" } }))!;
+  const days2027 = await prisma.leaveEntitlement.count({
+    where: {
+      employeeId: crosser.employeeId,
+      leaveTypeId: casualType.id,
+      fromDate: calendarDate(2027, 1, 1),
+    },
+  });
+  check("next year's entitlement exists before the leave is decided", days2027 === 1);
+
+  const planned = planLeaveDays(
+    calendarDate(2026, 12, 28),
+    calendarDate(2027, 1, 8),
+    spanning.holidays,
+    spanning.halfDayHolidays,
+    spanning.weeklyOffDays,
+  );
+  const crossRequest = await prisma.leaveRequest.create({
+    data: {
+      employeeId: crosser.employeeId,
+      leaveTypeId: casualType.id,
+      reason: "regression",
+      status: "GRANTED",
+      currentStep: 0,
+      days: {
+        create: planned.map((d) => ({
+          employeeId: crosser.employeeId,
+          leaveTypeId: casualType.id,
+          date: d.date,
+          dayKind: d.dayKind,
+          lengthDays: d.lengthDays,
+        })),
+      },
+    },
+  });
+  const { shortfall: crossShortfall } = await prisma.$transaction((tx) =>
+    consumeEntitlement(tx, crossRequest.id),
+  );
+  check(
+    `every one of the ${workingDayCost(planned)} working days came off a balance`,
+    crossShortfall === 0,
+    `${crossShortfall} unfunded`,
+  );
+  const drawn2027 = await prisma.leaveDayEntitlement.aggregate({
+    where: {
+      leaveDay: { leaveRequestId: crossRequest.id },
+      entitlement: { fromDate: calendarDate(2027, 1, 1) },
+    },
+    _sum: { lengthDays: true },
+  });
+  check(
+    "and January's days came out of January's year, not December's",
+    Number(drawn2027._sum.lengthDays ?? 0) > 0,
+    `${Number(drawn2027._sum.lengthDays ?? 0)} days drawn from 2027`,
+  );
+  await prisma.holiday.deleteMany({ where: { name: holidayName } });
+
+  // ---------------------------------------------------------------------
+  console.log("\n19 · An exit can be undone (§6.6)");
+  // ---------------------------------------------------------------------
+  const returner = await fixture("qa-reg-returner@qa.fcsl.invalid", "QA Returner", {});
+  await prisma.exit.create({
+    data: {
+      employeeId: returner.employeeId,
+      reason: "RESIGNATION",
+      lastWorkingDay: calendarDate(2026, 9, 1),
+      documentsPurgeAfter: calendarDate(2027, 9, 1),
+      recordedByName: "qa",
+      completedAt: new Date(),
+      completedByName: "qa",
+    },
+  });
+  await prisma.employee.update({
+    where: { id: returner.employeeId },
+    data: { status: "LEFT", lastWorkingDay: calendarDate(2026, 9, 1) },
+  });
+  await prisma.user.update({ where: { id: returner.userId }, data: { disabledAt: new Date() } });
+
+  const admin = await fixture("qa-reg-sa@qa.fcsl.invalid", "QA Regression Super Admin", {});
+  const blockedFirst = await enableAccountAs(
+    { userId: admin.userId, role: "SUPER_ADMIN", name: "QA Regression Super Admin" },
+    returner.userId,
+    "They withdrew their resignation.",
+  );
+  check(
+    "re-enabling is still refused while they are marked as having left",
+    "error" in blockedFirst,
+  );
+
+  // The action itself needs a request, so the reversal is done the way it does
+  // it and then checked. The source check below pins the action to this shape.
+  await prisma.$transaction(async (tx) => {
+    await tx.exit.update({
+      where: { employeeId: returner.employeeId },
+      data: { reversedAt: new Date(), reversedByName: "qa", reversalReason: "Withdrew it." },
+    });
+    await tx.employee.update({
+      where: { id: returner.employeeId },
+      data: { status: "ACTIVE", lastWorkingDay: null },
+    });
+  });
+  const nowAllowed = await enableAccountAs(
+    { userId: admin.userId, role: "SUPER_ADMIN", name: "QA Regression Super Admin" },
+    returner.userId,
+    "They withdrew their resignation.",
+  );
+  check("and allowed once the exit is undone", "ok" in nowAllowed, JSON.stringify(nowAllowed));
+  check(
+    "the exit is kept on the record, marked undone, never deleted",
+    (await prisma.exit.count({ where: { employeeId: returner.employeeId } })) === 1,
+  );
+
+  const exitFile = source("app/actions/hr-exit.ts");
+  // Scoped to reverseExit: `disabledAt: null` appears elsewhere in this file
+  // as a FILTER on who to notify, and matching that proves nothing.
+  const exitSource = exitFile.slice(exitFile.indexOf("export async function reverseExit"));
+  check(
+    "[source] reverseExit demands a reason and leaves the account to the Super Admin",
+    /export async function reverseExit/.test(exitSource) &&
+      /Say why the exit is being undone/.test(exitSource) &&
+      !/disabledAt/.test(exitSource),
+  );
+  check(
+    "[source] a fresh exit can be recorded after one is undone",
+    /if \(employee\.exit && !employee\.exit\.reversedAt\)/.test(exitFile),
+  );
+  check(
+    "[source] it refuses once the documents have been purged",
+    /documentsPurgedAt/.test(exitSource),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n20 · Unused earned leave carries into next year (§12.2)");
+  // ---------------------------------------------------------------------
+  check("what carries is what was left, capped", carriedForwardDays(20, 5, 40) === 15);
+  const carrier = await fixture("qa-reg-carrier@qa.fcsl.invalid", "QA Carrier", {
+    joiningDate: calendarDate(2020, 1, 1),
+  });
+  const carrierRow = (await prisma.employee.findUnique({ where: { id: carrier.employeeId } }))!;
+  await ensureEntitlements(carrierRow, 2026);
+  const earned = (await prisma.leaveType.findFirst({ where: { code: "EARNED" } }))!;
+  const earned2026 = await prisma.leaveEntitlement.findFirst({
+    where: { employeeId: carrier.employeeId, leaveTypeId: earned.id, fromDate: calendarDate(2026, 1, 1) },
+  });
+  await ensureEntitlements(carrierRow, 2027);
+  const carriedBucket = await prisma.leaveEntitlement.findFirst({
+    where: {
+      employeeId: carrier.employeeId,
+      leaveTypeId: earned.id,
+      fromDate: calendarDate(2027, 1, 1),
+      source: "CARRY_FORWARD",
+    },
+  });
+  check(
+    "a carry-forward bucket is created for a type that carries",
+    carriedBucket !== null && Number(carriedBucket.days) === Number(earned2026?.days ?? 0),
+    `carried ${Number(carriedBucket?.days ?? 0)} of ${Number(earned2026?.days ?? 0)}`,
+  );
+  const casualCarried = await prisma.leaveEntitlement.count({
+    where: {
+      employeeId: carrier.employeeId,
+      leaveTypeId: casualType.id,
+      source: "CARRY_FORWARD",
+    },
+  });
+  check("and none for a type that does not carry", casualCarried === 0);
+  // Idempotent: opening the page twice must not double it.
+  await ensureEntitlements(carrierRow, 2027);
+  check(
+    "running it again does not carry the days a second time",
+    (await prisma.leaveEntitlement.count({
+      where: { employeeId: carrier.employeeId, leaveTypeId: earned.id, source: "CARRY_FORWARD" },
+    })) === 1,
   );
 
   if (sequenceBefore) {

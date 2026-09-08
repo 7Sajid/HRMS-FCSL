@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireCapability } from "@/lib/auth";
-import { canReviewOnboardingOf } from "@/lib/permissions";
+import { can, canReviewOnboardingOf } from "@/lib/permissions";
 import { formatDateTime, todayInDhaka, workingDaysSince } from "@/lib/dates";
 import { progressLabels } from "@/lib/onboarding";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
 import { ButtonLink } from "@/components/ui/Button";
+import { ReissuePassword } from "@/components/hr/ReissuePassword";
 
 export const metadata = { title: "Joiners · FCSL HR" };
 
@@ -153,6 +154,21 @@ export default async function Page() {
                   >
                     Open
                   </Link>
+                  {/* Beside the badge that reports the problem. This list has
+                      always been able to say "Password expired" and never able
+                      to do anything about it.
+
+                      Rendered for every joiner, NOT only the expired ones, and
+                      that is load-bearing: issuing a password moves the expiry
+                      into the future, so a condition on `expired` would unmount
+                      this component in the same breath as the server action
+                      returned — taking with it the password that is shown once
+                      and never again. */}
+                  {can(context.viewer, "accounts.create") && (
+                    <div className="w-full">
+                      <ReissuePassword employeeId={person.id} fullName={person.fullName} />
+                    </div>
+                  )}
                 </Card>
               );
             })}

@@ -37,10 +37,20 @@ export async function decideRequisition(
   if (!requisition) return { error: "Not found." };
   if (requisition.status !== "PENDING") return { error: "This has already been decided." };
 
-  const threshold = Number(
-    (await prisma.setting.findUnique({ where: { key: "requisition.escalationThreshold" } }))?.value ??
-      50000,
-  );
+  // The threshold this request was RAISED under, not today's. A request must
+  // travel the chain it was given: moving the setting while something waits in
+  // an inbox used to change how many signatures it needed, in either
+  // direction, with nothing on the record to say so.
+  //
+  // Falling back to the live setting only for rows raised before the column
+  // existed — there is no better answer available for those.
+  const threshold =
+    requisition.escalationThreshold !== null
+      ? Number(requisition.escalationThreshold)
+      : Number(
+          (await prisma.setting.findUnique({ where: { key: "requisition.escalationThreshold" } }))
+            ?.value ?? 50000,
+        );
   const amount = requisition.amount ? Number(requisition.amount) : null;
   const chain = requisitionChain(amount !== null && amount > threshold);
 

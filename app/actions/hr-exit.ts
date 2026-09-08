@@ -7,7 +7,7 @@ import { currentIp, getSessionContext } from "@/lib/auth";
 import { actorFrom, record } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
 import { can } from "@/lib/permissions";
-import { fromISODate } from "@/lib/dates";
+import { fromISODate, toISODate } from "@/lib/dates";
 import { CLEARANCE_CHECKLIST, exitBlockers, purgeDateFor } from "@/lib/exit";
 
 export type ExitResult = { ok: true } | { error: string };
@@ -44,14 +44,41 @@ export async function recordExit(
     include: { exit: true },
   });
   if (!employee) return { error: "Not found." };
-  if (employee.exit) return { error: "An exit is already recorded for this person." };
+  // A REVERSED exit is not an exit. Somebody who withdrew a resignation in
+  // March and genuinely leaves in September needs this to work; the reversed
+  // one lives on in the permanent record, which is where rule 8's guarantee
+  // actually sits.
+  if (employee.exit && !employee.exit.reversedAt) {
+    return { error: "An exit is already recorded for this person." };
+  }
 
   const actorName = context.employee?.fullName ?? context.user.email;
   const ip = await currentIp();
 
   await prisma.$transaction(async (tx) => {
-    await tx.exit.create({
-      data: {
+    await tx.exit.upsert({
+      where: { employeeId },
+      update: {
+        reason: parsed.data.reason,
+        reasonNote: parsed.data.reasonNote,
+        lastWorkingDay,
+        recordedById: context.user.id,
+        recordedByName: actorName,
+        recordedAt: new Date(),
+        completedAt: null,
+        completedById: null,
+        completedByName: "",
+        reversedAt: null,
+        reversedById: null,
+        reversedByName: "",
+        reversalReason: "",
+        documentsPurgeAfter: purgeDateFor(lastWorkingDay),
+        clearanceItems: {
+          deleteMany: {},
+          create: CLEARANCE_CHECKLIST.map((item) => ({ ...item })),
+        },
+      },
+      create: {
         employeeId,
         reason: parsed.data.reason,
         reasonNote: parsed.data.reasonNote,
@@ -242,5 +269,103 @@ export async function completeExit(employeeId: string): Promise<ExitResult> {
   revalidatePath("/hr/exits");
   revalidatePath(`/hr/exits/${employeeId}`);
   revalidatePath("/hr/employees");
+  return { ok: true };
+}
+
+/**
+ * Undo an exit (§6.6).
+ *
+ * A resignation withdrawn, or an exit recorded against the wrong person. Until
+ * this existed there was no way back at all: `lib/accounts.ts` refused to
+ * re-enable the account with "Reverse the exit first" and the software offered
+ * no means of doing so, so a typo needed somebody in the database.
+ *
+ * HR undoes the RECORD; the account stays closed until the Super Admin opens
+ * it, because §5.5 gives activating an account to them alone. That is why this
+ * does not touch `disabledAt` — and why `enableAccountAs` now succeeds, since
+ * it refuses only while the person is still marked LEFT.
+ */
+export async function reverseExit(employeeId: string, reason: string): Promise<ExitResult> {
+  const context = await getSessionContext();
+  if (!context) return { error: "Please sign in again." };
+  if (!can(context.viewer, "exits.record")) return { error: "You cannot do that." };
+
+  const written = reason.trim().slice(0, 500);
+  // §6 everywhere: anything a person is told, they are told the reason for.
+  // This one is read by whoever asks why somebody left and then did not.
+  if (written.length < 5) {
+    return { error: "Say why the exit is being undone. This stays on the record." };
+  }
+
+  const employee = await prisma.employee.findUnique({
+    where: { id: employeeId },
+    include: { exit: true, certificates: { where: { status: "SURRENDERED" } } },
+  });
+  if (!employee?.exit) return { error: "No exit is recorded for this person." };
+  if (employee.exit.reversedAt) return { error: "This exit has already been undone." };
+  if (employee.exit.documentsPurgedAt) {
+    // §12.2 removed the files a year after the last working day. Putting the
+    // person back would leave a staff file that cannot be completed, and
+    // pretending otherwise is worse than refusing.
+    return {
+      error:
+        "Their documents were removed under the one-year retention rule. This exit can no longer be undone — create a new file.",
+    };
+  }
+
+  const actorName = context.employee?.fullName ?? context.user.email;
+  const ip = await currentIp();
+  const lastWorkingDay = employee.exit.lastWorkingDay;
+
+  await prisma.$transaction(async (tx) => {
+    await tx.exit.update({
+      where: { employeeId },
+      data: {
+        reversedAt: new Date(),
+        reversedById: context.user.id,
+        reversedByName: actorName,
+        reversalReason: written,
+      },
+    });
+
+    await tx.employee.update({
+      where: { id: employeeId },
+      data: { status: "ACTIVE", lastWorkingDay: null },
+    });
+
+    // The certificate was surrendered when the exit completed, which dropped
+    // them out of the expiry register. An RM coming back with no certificate
+    // is an RM nobody is watching.
+    for (const certificate of employee.certificates) {
+      if (certificate.surrenderedOn?.getTime() !== lastWorkingDay.getTime()) continue;
+      await tx.rmCertificate.update({
+        where: { id: certificate.id },
+        data: { status: "ACTIVE", surrenderedOn: null },
+      });
+    }
+
+    await record({
+      action: "exit.reversed",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "employee",
+      targetId: employeeId,
+      targetLabel: `${employee.fullName} — ${employee.employeeId ?? "no ID"}`,
+      detail: {
+        reason: written,
+        lastWorkingDay: toISODate(lastWorkingDay),
+        exitReason: employee.exit!.reason,
+        wasCompleted: employee.exit!.completedAt !== null,
+        certificatesRestored: employee.certificates.length,
+        // Said explicitly, because it is the next thing somebody has to do.
+        accountStillClosed: true,
+      },
+      ip,
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/exits");
+  revalidatePath(`/hr/exits/${employeeId}`);
+  revalidatePath("/admin/accounts");
   return { ok: true };
 }

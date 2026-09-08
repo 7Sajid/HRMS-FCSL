@@ -62,6 +62,10 @@ export async function raiseRequisition(
         type,
         details,
         amount: amount === null ? null : amount.toFixed(2),
+        // Frozen here. §7.2's chain is decided by the threshold as it stood
+        // when the request was made, not by whatever it says on the day
+        // somebody gets round to approving it.
+        escalationThreshold: threshold.toFixed(2),
         status: "PENDING",
         currentStep: 0,
         currentApproverRole: chain[0] ?? null,

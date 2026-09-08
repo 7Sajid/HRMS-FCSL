@@ -2,7 +2,7 @@
 
 import { useActionState, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { clearItem, completeExit, recordExit } from "@/app/actions/hr-exit";
+import { clearItem, completeExit, recordExit, reverseExit } from "@/app/actions/hr-exit";
 import { EXIT_REASONS } from "@/lib/exit";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
@@ -148,6 +148,88 @@ export function CompleteExitButton({
         Their certificate is surrendered, their access closes, and their employee ID is marked Left.
         The record itself is kept for ever.
       </p>
+    </div>
+  );
+}
+
+
+/**
+ * §6.6 — undo an exit.
+ *
+ * A resignation withdrawn, or one recorded against the wrong person. Asks for
+ * a reason and says plainly what it does and does not do: the record comes
+ * back, the login does not. §5.5 keeps re-opening an account with the Super
+ * Admin, so this screen ends by naming the next step rather than pretending
+ * the person can sign in again.
+ */
+export function ReverseExitButton({
+  employeeId,
+  fullName,
+  wasCompleted,
+}: {
+  employeeId: string;
+  fullName: string;
+  wasCompleted: boolean;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+
+  if (!asking) {
+    return (
+      <Button variant="secondary" onClick={() => setAsking(true)}>
+        Undo this exit
+      </Button>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {error && <ErrorBox>{error}</ErrorBox>}
+      <NoticeBox tone="warn">
+        <p>
+          {fullName} goes back to <strong className="font-medium">Active</strong>
+          {wasCompleted ? ", and their RM certificate comes back with them" : ""}. The exit stays on
+          the permanent record, marked undone.
+        </p>
+        <p className="mt-2">
+          <strong className="font-medium">Their login stays closed.</strong> Only the Super Admin
+          re-opens an account — ask them once this is done.
+        </p>
+      </NoticeBox>
+      <Field label="Why is it being undone?" htmlFor={`why-${employeeId}`} required>
+        <Textarea
+          id={`why-${employeeId}`}
+          rows={2}
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          placeholder="They withdrew their resignation on 8 September."
+        />
+      </Field>
+      <div className="flex flex-wrap gap-2">
+        <Button
+          variant="primary"
+          disabled={pending}
+          onClick={() =>
+            start(async () => {
+              const result = await reverseExit(employeeId, reason);
+              if ("error" in result) setError(result.error);
+              else {
+                setError("");
+                setAsking(false);
+                router.refresh();
+              }
+            })
+          }
+        >
+          {pending ? "Undoing…" : "Undo the exit"}
+        </Button>
+        <Button variant="secondary" disabled={pending} onClick={() => setAsking(false)}>
+          Cancel
+        </Button>
+      </div>
     </div>
   );
 }

@@ -30,6 +30,22 @@ export function leaveYearBounds(year: number): { from: Date; to: Date } {
 }
 
 /**
+ * Every leave year a range touches.
+ *
+ * Christmas week is the ordinary case: 28 December to 4 January is two leave
+ * years, and everything about the application — which holidays apply, which
+ * entitlement pays for it — has to be asked of both. Reading only the first
+ * day's year meant January's public holidays were charged as working days and
+ * January's days came off nobody's balance at all.
+ */
+export function yearsSpanned(from: Date, to: Date): number[] {
+  const first = from.getUTCFullYear();
+  const last = to.getUTCFullYear();
+  if (last < first) return [first];
+  return Array.from({ length: last - first + 1 }, (_, i) => first + i);
+}
+
+/**
  * A joiner's first year, pro-rated by the months they are actually employed.
  *
  * NOT stated in the specification — it is a policy question. Pro-rating is the
@@ -115,7 +131,21 @@ export function workingDayCost(days: readonly PlannedDay[]): number {
 // disagree with it.
 // ---------------------------------------------------------------------------
 
-export type Bucket = { id: string; fromDate: Date; toDate: Date; days: number };
+export type Bucket = {
+  id: string;
+  fromDate: Date;
+  toDate: Date;
+  days: number;
+  /**
+   * True for days carried over from last year.
+   *
+   * They open on the same day as this year's grant, so a sort on `fromDate`
+   * alone cannot tell them apart — and the whole point of drawing oldest-first
+   * is that the carried days, which lapse at the end of this year, get used
+   * before the ones that will carry again.
+   */
+  carriedForward?: boolean;
+};
 
 export type Balance = {
   /** Everything granted for the period. */
@@ -144,6 +174,28 @@ export function computeBalance(
     available,
     applicable: round(available - pendingDays),
   };
+}
+
+/**
+ * How many days carry into next year.
+ *
+ * §12 leaves the numbers to the HR Head — a type says whether it carries and
+ * what the ceiling is, and this is the arithmetic in between. Earned leave
+ * ships carrying forward with a cap of 40, and until now nothing anywhere
+ * created the bucket: the setting was stored, printed on the settings screen
+ * as "· carries forward", and silently did nothing. Unused earned leave simply
+ * vanished every 31 December.
+ *
+ * Never negative, and never more than the cap.
+ */
+export function carriedForwardDays(
+  granted: number,
+  used: number,
+  cap: number | null,
+): number {
+  const unused = round(Math.max(0, granted - used));
+  if (unused <= 0) return 0;
+  return cap === null ? unused : round(Math.min(unused, Math.max(0, cap)));
 }
 
 /**
@@ -240,7 +292,13 @@ export function allocateFifo(
   const remaining = buckets
     .filter((b) => b.days - b.alreadyUsed > 0)
     .slice()
-    .sort((a, b) => a.fromDate.getTime() - b.fromDate.getTime())
+    .sort(
+      (a, b) =>
+        a.fromDate.getTime() - b.fromDate.getTime() ||
+        // Same start date: carried days first. They are the ones about to
+        // expire, which is what an employee would choose if asked.
+        Number(b.carriedForward ?? false) - Number(a.carriedForward ?? false),
+    )
     .map((b) => ({ ...b, left: b.days - b.alreadyUsed }));
 
   const allocations: Allocation[] = [];
@@ -277,7 +335,11 @@ export type PreflightInput = {
   to: Date;
   today: Date;
   days: readonly PlannedDay[];
-  balance: Balance;
+  /**
+   * This person's balance in each year the range touches, in order. One entry
+   * for the ordinary application; two for one that crosses New Year.
+   */
+  balances: readonly { year: number; balance: Balance }[];
   overBalance: "REFUSE" | "WARN";
   lateReason: string;
   /** Dates already covered by this person's other live applications. */
@@ -315,22 +377,33 @@ export function preflight(input: PreflightInput): Preflight {
     errors.push("These dates have already started. Please say why the application is late.");
   }
 
-  // 2 — Enough days of that type left?
+  // 2 — Enough days of that type left, in each year the leave falls in?
+  //
+  // Asked year by year, because an entitlement belongs to its year: days taken
+  // in January come out of January's allowance, not out of what was left of
+  // December's. An ordinary application has one year in this list and reads
+  // exactly as it always did.
   //
   // Skipped entirely for a type that has no balance to be short of. It used to
   // fall through to the WARN branch and tell somebody applying for one day of
   // unpaid leave that they were "1 more than the balance", which reads as a
   // problem with their application rather than as the definition of the type.
-  if (!input.uncounted && cost > input.balance.applicable) {
-    const short = round(cost - input.balance.applicable);
-    const message =
-      `This costs ${cost} day${cost === 1 ? "" : "s"} and you have ${input.balance.applicable} left` +
-      (input.balance.pending
-        ? ` (${input.balance.pending} already applied for and waiting)`
-        : "") +
-      ` — ${short} more than the balance.`;
-    if (input.overBalance === "REFUSE") errors.push(message);
-    else warnings.push(`${message} HR allows this type to go over, but it will be noticed.`);
+  if (!input.uncounted) {
+    for (const { year, balance } of input.balances) {
+      const inThatYear = workingDayCost(
+        input.days.filter((day) => day.date.getUTCFullYear() === year),
+      );
+      if (inThatYear <= balance.applicable) continue;
+
+      const short = round(inThatYear - balance.applicable);
+      const named = input.balances.length > 1 ? ` in ${year}` : "";
+      const message =
+        `This costs ${inThatYear} day${inThatYear === 1 ? "" : "s"}${named} and you have ${balance.applicable} left` +
+        (balance.pending ? ` (${balance.pending} already applied for and waiting)` : "") +
+        ` — ${short} more than the balance.`;
+      if (input.overBalance === "REFUSE") errors.push(message);
+      else warnings.push(`${message} HR allows this type to go over, but it will be noticed.`);
+    }
   }
 
   // 3 — Do these dates overlap an application already made?

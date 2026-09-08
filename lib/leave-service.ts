@@ -4,12 +4,14 @@ import { toISODate, todayInDhaka } from "./dates";
 import {
   allocateFifo,
   audienceIncludes,
+  carriedForwardDays,
   computeBalance,
   isUncounted,
   leaveYearBounds,
   proRatedDays,
   ruleOn,
   weeklyOffOn,
+  yearsSpanned,
   type Balance,
   type Bucket,
 } from "./leave";
@@ -40,43 +42,100 @@ export type LeaveTypeView = {
  */
 export async function ensureEntitlements(employee: Employee, year: number): Promise<void> {
   const { from, to } = leaveYearBounds(year);
+  const previous = leaveYearBounds(year - 1);
 
-  const [types, existing] = await Promise.all([
+  const [types, existing, lastYear, usedLastYear] = await Promise.all([
     prisma.leaveType.findMany({
       where: { retiredAt: null },
       include: { rules: true },
       orderBy: { sortOrder: "asc" },
     }),
+    // Every source, not just GRANT: this now writes two kinds of bucket and
+    // both have to be idempotent.
     prisma.leaveEntitlement.findMany({
-      where: { employeeId: employee.id, fromDate: from, source: "GRANT" },
-      select: { leaveTypeId: true },
+      where: { employeeId: employee.id, fromDate: from },
+      select: { leaveTypeId: true, source: true },
+    }),
+    prisma.leaveEntitlement.findMany({
+      where: { employeeId: employee.id, fromDate: previous.from },
+      select: { id: true, leaveTypeId: true, days: true },
+    }),
+    prisma.leaveDayEntitlement.groupBy({
+      by: ["entitlementId"],
+      where: { entitlement: { employeeId: employee.id, fromDate: previous.from } },
+      _sum: { lengthDays: true },
     }),
   ]);
 
-  const alreadyGranted = new Set(existing.map((e) => e.leaveTypeId));
-  const missing = types.filter(
-    (t) => !alreadyGranted.has(t.id) && audienceIncludes(t.appliesTo, employee.gender),
+  const granted = new Set(
+    existing.filter((e) => e.source === "GRANT").map((e) => e.leaveTypeId),
   );
-  if (!missing.length) return;
+  const carried = new Set(
+    existing.filter((e) => e.source === "CARRY_FORWARD").map((e) => e.leaveTypeId),
+  );
+  const usedById = new Map(
+    usedLastYear.map((row) => [row.entitlementId, Number(row._sum.lengthDays ?? 0)]),
+  );
 
   const rows: Prisma.LeaveEntitlementCreateManyInput[] = [];
-  for (const type of missing) {
-    const rule = ruleOn(type.rules, to);
-    if (!rule) continue;
-    const annual = Number(rule.daysPerYear);
-    const days = proRatedDays(annual, employee.joiningDate, year);
-    if (days <= 0) continue;
+  for (const type of types) {
+    if (!audienceIncludes(type.appliesTo, employee.gender)) continue;
+
+    if (!granted.has(type.id)) {
+      const rule = ruleOn(type.rules, to);
+      if (rule) {
+        const annual = Number(rule.daysPerYear);
+        const days = proRatedDays(annual, employee.joiningDate, year);
+        if (days > 0) {
+          rows.push({
+            employeeId: employee.id,
+            leaveTypeId: type.id,
+            fromDate: from,
+            toDate: to,
+            days,
+            source: "GRANT",
+            note:
+              days === annual
+                ? `${year} entitlement`
+                : `${year} entitlement, pro-rated from the joining date`,
+            createdByName: "System",
+          });
+        }
+      }
+    }
+
+    // §12.2 — what last year's rule said about carrying, because that is the
+    // rule those days were earned under.
+    const lastYearRule = ruleOn(type.rules, previous.to);
+    if (!lastYearRule?.carryForward || carried.has(type.id)) continue;
+
+    const mine = lastYear.filter((e) => e.leaveTypeId === type.id);
+    if (!mine.length) continue;
+    const grantedLastYear = mine.reduce((total, e) => total + Number(e.days), 0);
+    const consumedLastYear = mine.reduce((total, e) => total + (usedById.get(e.id) ?? 0), 0);
+    const carriedDays = carriedForwardDays(
+      grantedLastYear,
+      consumedLastYear,
+      lastYearRule.carryForwardCap === null ? null : Number(lastYearRule.carryForwardCap),
+    );
+    if (carriedDays <= 0) continue;
+
     rows.push({
       employeeId: employee.id,
       leaveTypeId: type.id,
+      // Valid for the whole of this year and then gone. FIFO draws it before
+      // this year's grant — see `carriedForward` on Bucket — so the days that
+      // lapse are the ones that get used.
       fromDate: from,
       toDate: to,
-      days,
-      source: "GRANT",
-      note:
-        days === annual
-          ? `${year} entitlement`
-          : `${year} entitlement, pro-rated from the joining date`,
+      days: carriedDays,
+      source: "CARRY_FORWARD",
+      note: `Carried forward from ${year - 1}${
+        lastYearRule.carryForwardCap !== null &&
+        grantedLastYear - consumedLastYear > Number(lastYearRule.carryForwardCap)
+          ? `, capped at ${Number(lastYearRule.carryForwardCap)}`
+          : ""
+      }`,
       createdByName: "System",
     });
   }
@@ -169,6 +228,7 @@ export async function leaveTypesForMany(
               fromDate: e.fromDate,
               toDate: e.toDate,
               days: Number(e.days),
+              carriedForward: e.source === "CARRY_FORWARD",
             }));
 
           const used = buckets.reduce(
@@ -203,6 +263,31 @@ export async function leaveTypesForMany(
 }
 
 /** The calendar facts every leave calculation needs. */
+/**
+ * The calendar over a whole range, however many years it touches.
+ *
+ * `calendarFor(year)` reads one year and is right for a screen that shows one
+ * year. It was also what an application read, so an application starting on 28
+ * December never learned about January's public holidays and charged them as
+ * working days.
+ */
+export async function calendarForRange(from: Date, to: Date): Promise<{
+  holidays: Set<string>;
+  halfDayHolidays: Set<string>;
+  weeklyOffDays: readonly number[];
+}> {
+  const years = yearsSpanned(from, to);
+  const [holidays, weekRules] = await Promise.all([
+    prisma.holiday.findMany({ where: { year: { in: years } } }),
+    prisma.weeklyOffRule.findMany(),
+  ]);
+  return {
+    holidays: new Set(holidays.map((h) => toISODate(h.date))),
+    halfDayHolidays: new Set(holidays.filter((h) => h.halfDay).map((h) => toISODate(h.date))),
+    weeklyOffDays: weeklyOffOn(weekRules, todayInDhaka()),
+  };
+}
+
 export async function calendarFor(year: number): Promise<{
   holidays: Set<string>;
   halfDayHolidays: Set<string>;
@@ -307,6 +392,7 @@ export async function consumeEntitlement(
       fromDate: b.fromDate,
       toDate: b.toDate,
       days: Number(b.days),
+      carriedForward: b.source === "CARRY_FORWARD",
       alreadyUsed: usedById.get(b.id) ?? 0,
     })),
     days.map((d) => ({ date: d.date, dayKind: d.dayKind, lengthDays: Number(d.lengthDays) })),
