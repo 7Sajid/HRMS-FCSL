@@ -8,6 +8,7 @@ import { actorFrom, record } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
 import { can } from "@/lib/permissions";
 import { fromISODate } from "@/lib/dates";
+import { leaveYearBounds } from "@/lib/leave";
 
 export type SetupResult = { ok: true } | { error: string };
 
@@ -281,5 +282,93 @@ export async function resolveCorrection(
   });
 
   revalidatePath(`/hr/employees/${request.employeeId}`);
+  return { ok: true };
+}
+
+/**
+ * Add days to somebody's balance, or take them away (§6.2).
+ *
+ * There was no way to do either. `ensureEntitlements` says "a bucket that
+ * exists is never touched, so HR's adjustments survive" and nothing anywhere
+ * created one; `consumeEntitlement` records a shortfall when leave is granted
+ * beyond entitlement "rather than refusing it", leaving a discrepancy nobody
+ * could ever close.
+ *
+ * Written as a new dated bucket, never by editing the grant. Rule 8, and the
+ * same reason leave rules are dated: last year's arithmetic must still come
+ * out the same, and "who changed this, when, and why" has to have an answer.
+ * A negative bucket reduces what was entitled and funds nothing — `allocateFifo`
+ * only ever draws from a bucket with days left in it.
+ */
+export async function adjustLeaveBalance(
+  employeeId: string,
+  leaveTypeId: string,
+  year: number,
+  days: number,
+  reason: string,
+): Promise<SetupResult> {
+  const context = await getSessionContext();
+  if (!context) return { error: "Please sign in again." };
+  if (!can(context.viewer, "employees.setup")) return { error: "You cannot do that." };
+
+  const written = reason.trim().slice(0, 500);
+  if (written.length < 5) {
+    return { error: "Say why. This is read whenever somebody asks about their balance." };
+  }
+  if (!Number.isFinite(days) || days === 0) return { error: "Enter a number of days, up or down." };
+  // Half days are real; a hundred days of adjustment is a typo.
+  if (Math.abs(days) > 366) return { error: "That is more than a year. Check the number." };
+  if (Math.round(days * 2) !== days * 2) return { error: "Days go in halves — 1, 1.5, 2." };
+
+  const [employee, leaveType] = await Promise.all([
+    prisma.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true } }),
+    prisma.leaveType.findUnique({ where: { id: leaveTypeId }, select: { id: true, name: true } }),
+  ]);
+  if (!employee || !leaveType) return { error: "Not found." };
+
+  const { from, to } = leaveYearBounds(year);
+  const actorName = context.employee?.fullName ?? context.user.email;
+  const ip = await currentIp();
+
+  await prisma.$transaction(async (tx) => {
+    await tx.leaveEntitlement.create({
+      data: {
+        employeeId,
+        leaveTypeId,
+        fromDate: from,
+        toDate: to,
+        days,
+        source: "ADJUSTMENT",
+        note: written,
+        createdById: context.user.id,
+        createdByName: actorName,
+      },
+    });
+    await record({
+      action: "leave.adjusted",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "employee",
+      targetId: employeeId,
+      targetLabel: `${employee.fullName} — ${leaveType.name}`,
+      detail: { year, days, reason: written },
+      ip,
+      tx,
+    });
+    await notify(
+      {
+        userId: (await tx.employee.findUniqueOrThrow({
+          where: { id: employeeId },
+          select: { userId: true },
+        })).userId,
+        title: `Your ${leaveType.name.toLowerCase()} balance has changed`,
+        body: `${days > 0 ? "+" : ""}${days} day${Math.abs(days) === 1 ? "" : "s"} for ${year}. ${written}`,
+        link: "/me/leave",
+      },
+      tx,
+    );
+  });
+
+  revalidatePath(`/hr/employees/${employeeId}`);
+  revalidatePath("/me/leave");
   return { ok: true };
 }

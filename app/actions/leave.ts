@@ -7,7 +7,13 @@ import { actorFrom, record } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
 import { chainStart, waitingWith } from "@/lib/approval-chain";
 import { fromISODate, formatDate, todayInDhaka } from "@/lib/dates";
-import { planLeaveDays, preflight, workingDayCost, yearsSpanned } from "@/lib/leave";
+import {
+  maximumLeaveDays,
+  planLeaveDays,
+  preflight,
+  workingDayCost,
+  yearsSpanned,
+} from "@/lib/leave";
 import {
   bookedDates,
   calendarForRange,
@@ -65,10 +71,11 @@ export async function applyForLeave(_previous: unknown, formData: FormData): Pro
   const years = yearsSpanned(from, to);
   for (const year of years) await ensureEntitlements(employee, year);
 
-  const [byYear, calendar, booked] = await Promise.all([
+  const [byYear, calendar, booked, maximum] = await Promise.all([
     Promise.all(years.map(async (year) => ({ year, types: await leaveTypesFor(employee, year) }))),
     calendarForRange(from, to),
     bookedDates(employee.id),
+    prisma.setting.findUnique({ where: { key: "leave.maximumDays" } }),
   ]);
 
   const types = byYear[0]!.types;
@@ -107,6 +114,7 @@ export async function applyForLeave(_previous: unknown, formData: FormData): Pro
     overlappingDates: booked,
     attachmentRequiredAfterDays: type.attachmentRequiredAfterDays,
     hasAttachment: Boolean(attachmentId),
+    maximumDays: maximumLeaveDays(maximum?.value),
     uncounted: type.uncounted,
     teamAwayCount: away,
     teamSize,

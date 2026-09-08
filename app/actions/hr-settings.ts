@@ -337,6 +337,18 @@ export async function retireOrgItem(
     };
   }
 
+  // The NAME, read before it is retired. Every other historical row in this
+  // system carries a denormalised snapshot of its subject; this one recorded
+  // the word "department", so the permanent record could not answer which
+  // department was retired in March.
+  const named =
+    kind === "department"
+      ? await prisma.department.findUnique({ where: { id }, select: { name: true } })
+      : kind === "designation"
+        ? await prisma.designation.findUnique({ where: { id }, select: { name: true } })
+        : await prisma.grade.findUnique({ where: { id }, select: { name: true } });
+  if (!named) return { error: "Not found." };
+
   const retiredAt = new Date();
   const actorName = context.employee?.fullName ?? context.user.email;
   await prisma.$transaction(async (tx) => {
@@ -349,7 +361,8 @@ export async function retireOrgItem(
       actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
       targetType: kind,
       targetId: id,
-      targetLabel: kind,
+      targetLabel: `${named.name} (${kind})`,
+      ip: await currentIp(),
       tx,
     });
   });

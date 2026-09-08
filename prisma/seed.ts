@@ -84,6 +84,11 @@ const SETTINGS = [
     note: "Branch sheets are due by this day of the following month (§6.3).",
   },
   {
+    key: "leave.maximumDays",
+    value: "366",
+    note: "Calendar days. The longest single leave application the system takes.",
+  },
+  {
     key: "certificate.warnMonthsBefore",
     value: "4",
     note: "Four months, and it warns only — it never blocks (§12.2).",

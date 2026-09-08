@@ -5,6 +5,7 @@ import {
   audienceIncludes,
   carriedForwardDays,
   computeBalance,
+  DEFAULT_MAXIMUM_LEAVE_DAYS,
   isUncounted,
   planLeaveDays,
   preflight,
@@ -216,6 +217,7 @@ describe("§6.2 — what the system checks before accepting an application", () 
     overlappingDates: new Set<string>(),
     attachmentRequiredAfterDays: null,
     hasAttachment: false,
+    maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
     uncounted: false,
     teamAwayCount: 0,
     teamSize: 5,
@@ -302,6 +304,7 @@ describe("§6.2 — what the system checks before accepting an application", () 
       ...forDates(d(2026, 9, 7), d(2026, 9, 11)),
       attachmentRequiredAfterDays: 3,
       hasAttachment: true,
+      maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
     });
     expect(withCert.ok).toBe(true);
   });
@@ -343,6 +346,7 @@ describe("a type with no entitlement is not a balance (§6.2)", () => {
     overlappingDates: new Set<string>(),
     attachmentRequiredAfterDays: null,
     hasAttachment: false,
+    maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
     uncounted: true,
     teamAwayCount: 0,
     teamSize: 5,
@@ -451,6 +455,7 @@ describe("§6.2 — leave that crosses New Year", () => {
       overlappingDates: new Set<string>(),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
       uncounted: false,
       teamAwayCount: 0,
       teamSize: 5,
@@ -483,6 +488,7 @@ describe("§6.2 — leave that crosses New Year", () => {
       overlappingDates: new Set<string>(),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
       uncounted: false,
       teamAwayCount: 0,
       teamSize: 5,

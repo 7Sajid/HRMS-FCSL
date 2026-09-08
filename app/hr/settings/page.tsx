@@ -26,6 +26,10 @@ const SETTING_LABELS: Record<string, { label: string; note: string }> = {
     label: "Attendance deadline",
     note: "Day of the following month by which branches must submit.",
   },
+  "leave.maximumDays": {
+    label: "Longest leave application (days)",
+    note: "Calendar days in one application. Anything longer is recorded in parts.",
+  },
   "certificate.warnMonthsBefore": {
     label: "Certificate warning (months)",
     note: "How far ahead the RM certificate warning starts. It warns only — it never blocks.",

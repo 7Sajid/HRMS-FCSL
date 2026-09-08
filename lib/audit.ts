@@ -74,6 +74,7 @@ export type AuditAction =
   | "leave.denied"
   | "leave.granted"
   | "leave.withdrawn"
+  | "leave.adjusted"
   | "leave.cancelled"
   | "leave.entitlement_granted"
   // Attendance
@@ -100,6 +101,7 @@ export type AuditAction =
   | "exit.clearance_cleared"
   | "exit.completed"
   | "exit.reversed"
+  | "exit.release_letter_issued"
   // Compliance
   | "showcause.issued"
   | "showcause.viewed"
@@ -172,6 +174,7 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "leave.denied": "Leave denied",
   "leave.granted": "Leave finally granted",
   "leave.withdrawn": "Leave withdrawn",
+  "leave.adjusted": "Leave balance adjusted",
   "leave.cancelled": "Leave cancelled",
   "leave.entitlement_granted": "Leave entitlement granted",
 
@@ -198,6 +201,7 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "exit.clearance_cleared": "Clearance item cleared",
   "exit.completed": "Exit completed",
   "exit.reversed": "Exit reversed",
+  "exit.release_letter_issued": "Release letter issued",
 
   "showcause.issued": "Show-cause letter issued",
   "showcause.viewed": "Show-cause file opened",
@@ -283,6 +287,7 @@ export const ACTION_GROUPS: { label: string; actions: AuditAction[] }[] = [
       "leave.denied",
       "leave.granted",
       "leave.withdrawn",
+      "leave.adjusted",
       "leave.cancelled",
       "leave.entitlement_granted",
       "attendance.sheet_submitted",
@@ -319,6 +324,7 @@ export const ACTION_GROUPS: { label: string; actions: AuditAction[] }[] = [
       "exit.clearance_cleared",
       "exit.completed",
       "exit.reversed",
+      "exit.release_letter_issued",
     ],
   },
   {

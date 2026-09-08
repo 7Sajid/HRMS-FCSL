@@ -51,8 +51,15 @@ export default async function Page({ searchParams }: Props) {
       where: {
         branchId: branch.id,
         onboardingStatus: "APPROVED",
-        // Somebody who left before this month started is not on this sheet.
-        OR: [{ status: "ACTIVE" }, { lastWorkingDay: { gte: first } }],
+        // Somebody who left before this month started is not on this sheet,
+        // and neither is somebody who had not joined yet. The roster filtered
+        // on who had LEFT and never on who had not yet arrived, so a September
+        // joiner appeared on January's grid and could be marked Absent for a
+        // month they did not work here.
+        AND: [
+          { OR: [{ status: "ACTIVE" }, { lastWorkingDay: { gte: first } }] },
+          { OR: [{ joiningDate: null }, { joiningDate: { lte: last } }] },
+        ],
       },
       orderBy: { fullName: "asc" },
     }),

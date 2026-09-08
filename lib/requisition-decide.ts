@@ -1,5 +1,5 @@
 import type { Prisma, Role } from "@prisma/client";
-import { prisma } from "./db";
+import { lostTheRace, prisma } from "./db";
 import { actorFrom, record } from "./audit";
 import { notify } from "./notifications";
 import { requisitionChain } from "./approval-chain";
@@ -145,7 +145,15 @@ export async function decideRequisition(
       approvers: requisition.approvals.map((a) => a.approverName).concat(actor.name),
     }, ip);
     return "approved" as const;
+  }).catch((error: unknown) => {
+    // Same shape as leave: the unique index on (requisition, step) keeps the
+    // rule when two people decide at once, and this is how the one who lost
+    // gets a sentence rather than a crash.
+    if (lostTheRace(error)) return null;
+    throw error;
   });
+
+  if (outcome === null) return { error: "This has already been decided." };
 
   return { ok: true, outcome };
 }

@@ -1,5 +1,5 @@
 import type { Prisma, Role } from "@prisma/client";
-import { prisma } from "./db";
+import { lostTheRace, prisma } from "./db";
 import { actorFrom, record } from "./audit";
 import { notify } from "./notifications";
 import { canDecideAt, chainAdvance } from "./approval-chain";
@@ -218,7 +218,16 @@ export async function applyLeaveDecision(
     });
 
     return { kind: "granted" as const, shortfall };
+  }).catch((error: unknown) => {
+    // The unique index on (request, step) is what keeps rule 1 when two people
+    // press the button in the same second. Nothing is decided twice and no
+    // entitlement is consumed twice — the loser's transaction rolls back — but
+    // until now they saw an unhandled error rather than the obvious sentence.
+    if (lostTheRace(error)) return null;
+    throw error;
   });
+
+  if (outcome === null) return { error: "This has already been decided." };
 
   // After the transaction commits, never inside it. An email that fails must
   // not roll back a decision that was made.

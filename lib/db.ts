@@ -27,3 +27,21 @@ export const prisma =
   });
 
 if (process.env.NODE_ENV !== "production") globalForPrisma.prisma = prisma;
+
+/**
+ * Did this fail because somebody else got there first?
+ *
+ * P2002 is a unique-constraint violation. Where a constraint exists precisely
+ * to stop the same thing happening twice — a second decision at the same step
+ * of an approval chain, a second open assignment of one trading terminal —
+ * hitting it is not an error in the system, it is the system working. The
+ * database is what actually holds the rule; this is only how the person on the
+ * losing end gets told, instead of being shown a crash.
+ */
+export function lostTheRace(error: unknown): boolean {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    (error as { code?: unknown }).code === "P2002"
+  );
+}

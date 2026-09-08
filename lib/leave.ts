@@ -30,6 +30,26 @@ export function leaveYearBounds(year: number): { from: Date; to: Date } {
 }
 
 /**
+ * The longest single application the system will take.
+ *
+ * There was no limit at all: 1 October 2026 to 1 October 2126 passed every
+ * check and would have written 36,525 day rows in one request. Leave without
+ * pay is not balance-checked, so nothing else stood in the way.
+ *
+ * A calendar-day span rather than a working-day cost, because the harm is the
+ * number of rows and the size of the request, not the number of days off. The
+ * HR Head sets the number; this is what it means when it is missing or
+ * nonsense.
+ */
+export const DEFAULT_MAXIMUM_LEAVE_DAYS = 366;
+
+export function maximumLeaveDays(setting: string | null | undefined): number {
+  const parsed = Number(String(setting ?? "").trim());
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_MAXIMUM_LEAVE_DAYS;
+  return Math.floor(parsed);
+}
+
+/**
  * Every leave year a range touches.
  *
  * Christmas week is the ordinary case: 28 December to 4 January is two leave
@@ -346,6 +366,8 @@ export type PreflightInput = {
   overlappingDates: ReadonlySet<string>;
   attachmentRequiredAfterDays: number | null;
   hasAttachment: boolean;
+  /** The longest span the HR Head allows, in calendar days. */
+  maximumDays: number;
   /** True for a type that is not counted against a balance — see isUncounted. */
   uncounted: boolean;
   /** How many of this person's team are already away on any of these dates. */
@@ -370,6 +392,16 @@ export function preflight(input: PreflightInput): Preflight {
 
   if (cost === 0) {
     errors.push("Those dates are all weekly offs or public holidays, so there is nothing to apply for.");
+  }
+
+  // Checked on the CALENDAR span, before anything walks the dates. An
+  // application of a hundred years passed every other check and would have
+  // written a day row for each of its 36,525 days.
+  const span = Math.round((input.to.getTime() - input.from.getTime()) / 86_400_000) + 1;
+  if (input.to >= input.from && span > input.maximumDays) {
+    errors.push(
+      `That is ${span} days. The longest single application is ${input.maximumDays} — record a longer absence in parts, or ask HR to raise the limit.`,
+    );
   }
 
   // 1 — Are the dates in the future, or is this a late application?

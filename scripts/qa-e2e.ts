@@ -15,7 +15,12 @@ import { allocateEmployeeId, employeeIdIsTaken, parseEmployeeId } from "../lib/e
 import { requiredKinds } from "../lib/documents";
 import { loadOnboardingState } from "../lib/onboarding";
 import { ensureEntitlements, leaveTypesFor, bookedDates } from "../lib/leave-service";
-import { planLeaveDays, workingDayCost, preflight } from "../lib/leave";
+import {
+  DEFAULT_MAXIMUM_LEAVE_DAYS,
+  planLeaveDays,
+  preflight,
+  workingDayCost,
+} from "../lib/leave";
 import { applyLeaveDecision } from "../lib/leave-decide";
 import { chainStart, canDecideAt } from "../lib/approval-chain";
 import { decideRequisition } from "../lib/requisition-decide";
@@ -438,6 +443,7 @@ async function main() {
       overlappingDates: await bookedDates(rm.employee.id),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
       uncounted: false,
       teamAwayCount: 0,
       teamSize: 1,
@@ -455,6 +461,7 @@ async function main() {
       overlappingDates: new Set(),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
       uncounted: false,
       teamAwayCount: 0,
       teamSize: 1,
@@ -472,6 +479,7 @@ async function main() {
       overlappingDates: new Set(),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
       uncounted: false,
       teamAwayCount: 0,
       teamSize: 1,

@@ -3,10 +3,11 @@ import Link from "next/link";
 import { prisma } from "@/lib/db";
 import { requireCapability } from "@/lib/auth";
 import { formatDate, formatDateTime } from "@/lib/dates";
-import { AREA_LABEL, exitBlockers } from "@/lib/exit";
+import { AREA_LABEL, exitBlockers, releaseLetterTemplate } from "@/lib/exit";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Badge, NoticeBox } from "@/components/ui/Feedback";
 import { ClearanceItem, CompleteExitButton, RecordExitForm, ReverseExitButton } from "@/components/hr/ExitPanel";
+import { ReleaseLetter } from "@/components/hr/ReleaseLetter";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -121,6 +122,31 @@ export default async function Page({ params }: Props) {
               Their RM certificate will be surrendered when you finish the exit, and they drop out of
               the expiry register.
             </NoticeBox>
+          )}
+
+          {!exit.reversedAt && (
+            <Card className="p-6">
+              <h2 className="mb-1 text-xs font-semibold tracking-widest text-ink-400">
+                RELEASE LETTER
+              </h2>
+              <p className="mb-4 text-sm text-ink-500">
+                {/* §6.6 step 5. The clearance list has always had a tick-box
+                    for this; the letter itself never reached the file. */}
+                Produced from a template and kept in their file permanently, so it can be produced
+                again years later.
+              </p>
+              <ReleaseLetter
+                employeeId={employee.id}
+                existingDocumentId={exit.releaseLetterDocumentId}
+                draft={releaseLetterTemplate({
+                  fullName: employee.fullName,
+                  designation: employee.designation?.name ?? null,
+                  joiningDate: employee.joiningDate ? formatDate(employee.joiningDate) : "—",
+                  lastWorkingDay: formatDate(exit.lastWorkingDay),
+                  reason: exit.reason,
+                })}
+              />
+            </Card>
           )}
 
           <section>

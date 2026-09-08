@@ -3,7 +3,7 @@ import { prisma } from "@/lib/db";
 import { requireCapability } from "@/lib/auth";
 import { employeeRecordScope, visibleEmployeeWhere } from "@/lib/permissions";
 import { formatDate, todayInDhaka } from "@/lib/dates";
-import { leaveTypesFor } from "@/lib/leave-service";
+import { ensureEntitlements, leaveTypesFor } from "@/lib/leave-service";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { DataList, DataRow } from "@/components/ui/DataList";
 import { Badge, NoticeBox } from "@/components/ui/Feedback";
@@ -59,9 +59,15 @@ export default async function Page({ params }: Props) {
     : null;
 
   // A current figure, so it belongs to whoever manages them now.
-  const balances = scope.limited
-    ? []
-    : await leaveTypesFor(member, todayInDhaka().getUTCFullYear());
+  const balances: Awaited<ReturnType<typeof leaveTypesFor>> = [];
+  if (!scope.limited) {
+    // Granted before it is read, as the person's own leave page does — a
+    // manager should not see "0 of 0" for somebody who simply has not opened
+    // their own screen yet.
+    const year = todayInDhaka().getUTCFullYear();
+    await ensureEntitlements(member, year);
+    balances.push(...(await leaveTypesFor(member, year)));
+  }
 
   const shown = period ?? member;
 

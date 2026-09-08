@@ -1,4 +1,4 @@
-import type { ClearanceArea, EmployeeStatus } from "@prisma/client";
+import type { ClearanceArea, EmployeeStatus, ExitReason } from "@prisma/client";
 
 /**
  * §6.6 — exit and clearance.
@@ -96,4 +96,42 @@ export function accessClosed(
   // Marked LEFT with no date to wait for closes now. There is no reading of
   // that state under which the account should still open.
   return !employee.lastWorkingDay || employee.lastWorkingDay < today;
+}
+
+/**
+ * The default wording of a release letter (§6.6 step 5).
+ *
+ * DRAFTED BY THE SOFTWARE, NOT BY FCSL. It is deliberately plain and says only
+ * what the system actually knows: that the person was employed, in what role,
+ * between which dates, and that they have been released. It makes no claim
+ * about conduct or performance, because the system holds no opinion on either
+ * and a letter that praises somebody by default is worth nothing to the person
+ * who earns it.
+ *
+ * HR edits this on screen before the PDF is made, so FCSL's own wording wins
+ * whenever it differs. The reason this is a template rather than a fixed
+ * string is exactly that.
+ */
+export function releaseLetterTemplate(person: {
+  fullName: string;
+  designation: string | null;
+  joiningDate: string;
+  lastWorkingDay: string;
+  reason: ExitReason;
+}): string {
+  const role = person.designation ? ` as ${person.designation}` : "";
+  const leaving =
+    person.reason === "RETIREMENT"
+      ? "on retirement"
+      : person.reason === "END_OF_CONTRACT"
+        ? "on the completion of their contract"
+        : "at their own request";
+
+  return `This is to certify that ${person.fullName} was employed by First Capital Securities Limited${role} from ${person.joiningDate} to ${person.lastWorkingDay}.
+
+Their employment ended ${leaving}. They have completed the company's clearance process and have no outstanding obligations to the company.
+
+${person.fullName} is released from the service of First Capital Securities Limited with effect from ${person.lastWorkingDay}.
+
+This letter is issued at their request and without prejudice.`;
 }

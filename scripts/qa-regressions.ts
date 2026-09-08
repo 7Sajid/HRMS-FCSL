@@ -10,6 +10,7 @@ import { headcount, documentReport, leaveReport } from "../lib/reports";
 import { leaveTypesFor, leaveTypesForMany } from "../lib/leave-service";
 import {
   audienceIncludes,
+  DEFAULT_MAXIMUM_LEAVE_DAYS,
   carriedForwardDays,
   isUncounted,
   planLeaveDays,
@@ -20,6 +21,9 @@ import {
 import { decideRequisition } from "../lib/requisition-decide";
 import { enableAccountAs } from "../lib/accounts";
 import { calendarForRange, ensureEntitlements } from "../lib/leave-service";
+import { maximumLeaveDays } from "../lib/leave";
+import { releaseLetterTemplate } from "../lib/exit";
+import { releaseLetterPdf } from "../lib/pdf";
 import { documentKey, getObject, putObject } from "../lib/storage";
 import { commitImport } from "../lib/import-commit";
 import { consumeEntitlement } from "../lib/leave-service";
@@ -444,7 +448,12 @@ async function main() {
   );
   check(
     "[source] and does not compute current leave balances for a former report",
-    /scope\.limited\s*\?\s*\[\]\s*:\s*await leaveTypesFor/.test(rosterSource),
+    // Pinned on the guard rather than on one way of writing it: the balances
+    // must only ever be fetched when the scope is NOT limited.
+    /if \(!scope\.limited\) \{[\s\S]{0,400}await leaveTypesFor/.test(rosterSource) &&
+      !/^\s*(const balances|balances\.push).*await leaveTypesFor/m.test(
+        rosterSource.replace(/if \(!scope\.limited\) \{[\s\S]*?\n  \}/, ""),
+      ),
   );
 
   // ---------------------------------------------------------------------
@@ -662,6 +671,7 @@ async function main() {
       overlappingDates: new Set<string>(),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
       uncounted: true,
       teamAwayCount: 0,
       teamSize: 5,
@@ -708,6 +718,7 @@ async function main() {
       overlappingDates: new Set(["2026-10-19"]),
       attachmentRequiredAfterDays: null,
       hasAttachment: false,
+      maximumDays: DEFAULT_MAXIMUM_LEAVE_DAYS,
       uncounted: false,
       teamAwayCount: 0,
       teamSize: 5,
@@ -1007,6 +1018,300 @@ async function main() {
     (await prisma.leaveEntitlement.count({
       where: { employeeId: carrier.employeeId, leaveTypeId: earned.id, source: "CARRY_FORWARD" },
     })) === 1,
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n21 · The database holds the rules the code only checked (§6.9, §5.1)");
+  // ---------------------------------------------------------------------
+  const probeTerminal = await prisma.tradingTerminal.create({
+    data: { terminalId: "QA-REG-IDX", exchange: "DSE", status: "ACTIVE" },
+  });
+  const holderA = await fixture("qa-reg-holder-a@qa.fcsl.invalid", "QA Holder A", {});
+  const holderB = await fixture("qa-reg-holder-b@qa.fcsl.invalid", "QA Holder B", {});
+  await prisma.terminalAssignment.create({
+    data: {
+      terminalId: probeTerminal.id,
+      employeeId: holderA.employeeId,
+      assignedOn: calendarDate(2026, 1, 1),
+      assignedByName: "qa",
+    },
+  });
+  let secondHolderRefused = false;
+  try {
+    await prisma.terminalAssignment.create({
+      data: {
+        terminalId: probeTerminal.id,
+        employeeId: holderB.employeeId,
+        assignedOn: calendarDate(2026, 1, 1),
+        assignedByName: "qa",
+      },
+    });
+  } catch {
+    secondHolderRefused = true;
+  }
+  check("one trading terminal cannot be held by two people at once", secondHolderRefused);
+
+  // History must still accumulate: a released assignment plus a live one.
+  await prisma.terminalAssignment.updateMany({
+    where: { terminalId: probeTerminal.id, releasedOn: null },
+    data: { releasedOn: calendarDate(2026, 6, 1) },
+  });
+  await prisma.terminalAssignment.create({
+    data: {
+      terminalId: probeTerminal.id,
+      employeeId: holderB.employeeId,
+      assignedOn: calendarDate(2026, 7, 1),
+      assignedByName: "qa",
+    },
+  });
+  check(
+    "but a released assignment beside a live one is still allowed — that is history",
+    (await prisma.terminalAssignment.count({ where: { terminalId: probeTerminal.id } })) === 2,
+  );
+
+  let secondContactRefused = false;
+  await prisma.emergencyContact.create({
+    data: {
+      employeeId: holderA.employeeId,
+      slot: 1,
+      name: "First",
+      relationship: "Brother",
+      mobile: "01711111111",
+      status: "CURRENT",
+    },
+  });
+  try {
+    await prisma.emergencyContact.create({
+      data: {
+        employeeId: holderA.employeeId,
+        slot: 1,
+        name: "Second",
+        relationship: "Sister",
+        mobile: "01722222222",
+        status: "CURRENT",
+      },
+    });
+  } catch {
+    secondContactRefused = true;
+  }
+  check("only one current emergency contact per slot", secondContactRefused);
+  await prisma.emergencyContact.updateMany({
+    where: { employeeId: holderA.employeeId },
+    data: { status: "SUPERSEDED" },
+  });
+  check(
+    "superseded ones are unconstrained — keeping every version is the point",
+    (await prisma.emergencyContact.count({ where: { employeeId: holderA.employeeId } })) === 1,
+  );
+  await prisma.terminalAssignment.deleteMany({ where: { terminalId: probeTerminal.id } });
+  await prisma.tradingTerminal.delete({ where: { id: probeTerminal.id } });
+
+  // ---------------------------------------------------------------------
+  console.log("\n22 · An attendance sheet lists only people who were here (§6.3)");
+  // ---------------------------------------------------------------------
+  const probeBranch = await prisma.branch.create({
+    data: { name: "QA Reg Branch", code: "QRB", openedOn: calendarDate(2020, 1, 1) },
+  });
+  const lateJoiner = await fixture("qa-reg-late@qa.fcsl.invalid", "QA Late Joiner", {
+    branchId: probeBranch.id,
+    joiningDate: calendarDate(2026, 9, 1),
+  });
+  void lateJoiner;
+  const januaryFirst = calendarDate(2026, 1, 1);
+  const januaryLast = calendarDate(2026, 1, 31);
+  const onJanuary = await prisma.employee.findMany({
+    where: {
+      branchId: probeBranch.id,
+      onboardingStatus: "APPROVED",
+      AND: [
+        { OR: [{ status: "ACTIVE" }, { lastWorkingDay: { gte: januaryFirst } }] },
+        { OR: [{ joiningDate: null }, { joiningDate: { lte: januaryLast } }] },
+      ],
+    },
+    select: { id: true },
+  });
+  check("a September joiner is not on January's sheet", onJanuary.length === 0);
+  const onSeptember = await prisma.employee.findMany({
+    where: {
+      branchId: probeBranch.id,
+      onboardingStatus: "APPROVED",
+      AND: [
+        { OR: [{ status: "ACTIVE" }, { lastWorkingDay: { gte: calendarDate(2026, 9, 1) } }] },
+        { OR: [{ joiningDate: null }, { joiningDate: { lte: calendarDate(2026, 9, 30) } }] },
+      ],
+    },
+    select: { id: true },
+  });
+  check("and is on September's", onSeptember.length === 1);
+  check(
+    "[source] the grid and the save ask the same question",
+    /joiningDate: \{ lte: last \}/.test(source("app/team/attendance/page.tsx")) &&
+      /joiningDate: \{ lte: lastOfMonth \}/.test(source("app/actions/attendance.ts")),
+  );
+  await prisma.branch.delete({ where: { id: probeBranch.id } });
+
+  // ---------------------------------------------------------------------
+  console.log("\n23 · Leave has a maximum length, and the HR Head sets it");
+  // ---------------------------------------------------------------------
+  const maxSetting = await prisma.setting.findUnique({ where: { key: "leave.maximumDays" } });
+  check("the setting is seeded", maxSetting?.value === "366", String(maxSetting?.value));
+  check("and a missing or silly value falls back to a year", maximumLeaveDays(null) === 366 && maximumLeaveDays("0") === 366);
+  {
+    const from = calendarDate(2026, 10, 1);
+    const to = calendarDate(2126, 10, 1);
+    const result = preflight({
+      from,
+      to,
+      today: calendarDate(2026, 9, 1),
+      days: planLeaveDays(from, to, new Set()),
+      balances: [{ year: 2026, balance: { entitled: 0, taken: 0, pending: 0, available: 0, applicable: 0 } }],
+      overBalance: "WARN",
+      lateReason: "",
+      overlappingDates: new Set<string>(),
+      attachmentRequiredAfterDays: null,
+      hasAttachment: false,
+      maximumDays: maximumLeaveDays(maxSetting?.value),
+      uncounted: true,
+      teamAwayCount: 0,
+      teamSize: 5,
+    });
+    check("a hundred-year application is refused", !result.ok);
+    check(
+      "and told plainly how long it was",
+      result.errors.some((e) => /36525 days/.test(e)),
+      result.errors[0],
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  console.log("\n24 · Losing a race is a sentence, not a crash");
+  // ---------------------------------------------------------------------
+  check(
+    "[source] the leave decision catches the constraint that holds the rule",
+    /if \(lostTheRace\(error\)\) return null/.test(source("lib/leave-decide.ts")) &&
+      /This has already been decided/.test(source("lib/leave-decide.ts")),
+  );
+  check(
+    "[source] and so does the requisition decision",
+    /if \(lostTheRace\(error\)\) return null/.test(source("lib/requisition-decide.ts")),
+  );
+  check(
+    "[source] and assigning a terminal",
+    /assigned to somebody else a moment ago/.test(source("app/actions/hr-registers.ts")),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n25 · Requisitions can be withdrawn and marked delivered (§6.2, §6.4)");
+  // ---------------------------------------------------------------------
+  const requisitionsPage = source("app/team/requisitions/page.tsx");
+  check("[source] a withdraw button exists", /<WithdrawRequisition/.test(requisitionsPage));
+  check("[source] and a mark-delivered one", /<MarkDelivered/.test(requisitionsPage));
+  check(
+    "[source] the delivery list is gated on the capability the action checks",
+    /can\(context\.viewer, "requisitions\.approve"\)/.test(requisitionsPage),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n26 · HR can correct a balance in either direction (§6.2)");
+  // ---------------------------------------------------------------------
+  const adjusted = await fixture("qa-reg-adjust@qa.fcsl.invalid", "QA Adjusted", {
+    joiningDate: calendarDate(2020, 1, 1),
+  });
+  const adjustedRow = (await prisma.employee.findUnique({ where: { id: adjusted.employeeId } }))!;
+  await ensureEntitlements(adjustedRow, 2026);
+  const before = (await leaveTypesFor(adjustedRow, 2026)).find((t) => t.code === "CASUAL")!;
+  await prisma.leaveEntitlement.create({
+    data: {
+      employeeId: adjusted.employeeId,
+      leaveTypeId: before.id,
+      fromDate: calendarDate(2026, 1, 1),
+      toDate: calendarDate(2026, 12, 31),
+      days: -3,
+      source: "ADJUSTMENT",
+      note: "Regression: days taken outside the system.",
+      createdByName: "qa",
+    },
+  });
+  const afterDown = (await leaveTypesFor(adjustedRow, 2026)).find((t) => t.code === "CASUAL")!;
+  check(
+    `taking days away lowers what is entitled — ${before.balance.entitled} to ${afterDown.balance.entitled}`,
+    afterDown.balance.entitled === before.balance.entitled - 3,
+  );
+  await prisma.leaveEntitlement.create({
+    data: {
+      employeeId: adjusted.employeeId,
+      leaveTypeId: before.id,
+      fromDate: calendarDate(2026, 1, 1),
+      toDate: calendarDate(2026, 12, 31),
+      days: 5,
+      source: "ADJUSTMENT",
+      note: "Regression: agreed with the HR Head.",
+      createdByName: "qa",
+    },
+  });
+  const afterUp = (await leaveTypesFor(adjustedRow, 2026)).find((t) => t.code === "CASUAL")!;
+  check("and adding days raises it", afterUp.balance.entitled === before.balance.entitled + 2);
+  check(
+    "the grant itself is untouched — adjustments are new rows, never edits",
+    (await prisma.leaveEntitlement.count({
+      where: { employeeId: adjusted.employeeId, leaveTypeId: before.id, source: "GRANT" },
+    })) === 1,
+  );
+  check(
+    "[source] a written reason is demanded",
+    /Say why\. This is read whenever somebody asks about their balance/.test(
+      source("app/actions/hr-setup.ts"),
+    ),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n27 · The release letter is produced and filed (§6.6)");
+  // ---------------------------------------------------------------------
+  const draft = releaseLetterTemplate({
+    fullName: "QA Leaver",
+    designation: "Relationship Manager",
+    joiningDate: "12 Jan 2021",
+    lastWorkingDay: "30 Sept 2026",
+    reason: "RESIGNATION",
+  });
+  check("the draft names the person, the role and both dates",
+    draft.includes("QA Leaver") && draft.includes("Relationship Manager") &&
+      draft.includes("12 Jan 2021") && draft.includes("30 Sept 2026"));
+  check(
+    "and claims nothing about their conduct, which the system does not know",
+    !/excellent|satisfactor|good conduct|recommend/i.test(draft),
+  );
+  const letterBytes = await releaseLetterPdf({
+    employeeName: "QA Leaver",
+    employeeCode: "A 118 - 21 - 70",
+    designation: "Relationship Manager",
+    joiningDate: "12 Jan 2021",
+    lastWorkingDay: "30 Sept 2026",
+    body: draft,
+    issuedByName: "QA HR",
+    issuedOn: "8 Sept 2026",
+  });
+  check("it becomes a real PDF", Buffer.from(letterBytes.slice(0, 5)).toString() === "%PDF-");
+  const exitSourceForLetter = source("app/actions/hr-exit.ts");
+  check(
+    "[source] the file is written before the row that points at it",
+    exitSourceForLetter.indexOf("await putObject(key, bytes") <
+      exitSourceForLetter.indexOf("releaseLetterDocumentId: document.id"),
+  );
+  check(
+    "[source] and HR edits the wording before it is produced",
+    /value=\{body\}/.test(source("components/hr/ReleaseLetter.tsx")) &&
+      /Read it\s*\n?\s*before you issue it|Read it before you issue it/.test(
+        source("components/hr/ReleaseLetter.tsx"),
+      ),
+  );
+
+  // ---------------------------------------------------------------------
+  console.log("\n28 · The permanent record says WHICH one was retired");
+  // ---------------------------------------------------------------------
+  check(
+    "[source] the retirement line carries the name, not the word \"department\"",
+    /targetLabel: `\$\{named\.name\} \(\$\{kind\}\)`/.test(source("app/actions/hr-settings.ts")),
   );
 
   if (sequenceBefore) {

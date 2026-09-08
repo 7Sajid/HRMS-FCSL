@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { z } from "zod";
-import { prisma } from "@/lib/db";
+import { lostTheRace, prisma } from "@/lib/db";
 import { currentIp, getSessionContext } from "@/lib/auth";
 import { actorFrom, changedFields, record } from "@/lib/audit";
 import { can } from "@/lib/permissions";
@@ -213,7 +213,12 @@ export async function assignTerminal(
   }
 
   const actorName = context.employee?.fullName ?? context.user.email;
-  await prisma.$transaction(async (tx) => {
+  // The check above runs before this transaction opens, so on its own it is
+  // not enforcement — two people assigning the same terminal at the same
+  // moment both passed it. A partial unique index on the register is what
+  // actually holds the rule; this is how the one who loses gets told.
+  try {
+    await prisma.$transaction(async (tx) => {
     await tx.terminalAssignment.create({
       data: {
         terminalId,
@@ -233,7 +238,13 @@ export async function assignTerminal(
       ip: await currentIp(),
       tx,
     });
-  });
+    });
+  } catch (error) {
+    if (lostTheRace(error)) {
+      return { error: "This terminal was assigned to somebody else a moment ago. Reload and check." };
+    }
+    throw error;
+  }
 
   revalidatePath("/hr/terminals");
   return { ok: true };

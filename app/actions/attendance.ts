@@ -7,7 +7,7 @@ import { currentIp, getSessionContext } from "@/lib/auth";
 import { actorFrom, record } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
 import { can } from "@/lib/permissions";
-import { calendarDate, formatMonth, fromISODate } from "@/lib/dates";
+import { calendarDate, daysInMonth, formatMonth, fromISODate } from "@/lib/dates";
 import { isLockedMark } from "@/lib/attendance";
 
 export type SheetResult = { ok: true } | { error: string };
@@ -67,12 +67,19 @@ export async function markAttendance(
   // they are writing. Asked in the query rather than compared after the read,
   // and deliberately the same question the grid asks when it draws the rows —
   // anybody the sheet does not show is somebody the sheet cannot record.
+  const lastOfMonth = calendarDate(year, month, daysInMonth(year, month));
   const onThisSheet = await prisma.employee.findFirst({
     where: {
       id: employeeId,
       branchId,
       onboardingStatus: "APPROVED",
-      OR: [{ status: "ACTIVE" }, { lastWorkingDay: { gte: calendarDate(year, month, 1) } }],
+      AND: [
+        { OR: [{ status: "ACTIVE" }, { lastWorkingDay: { gte: calendarDate(year, month, 1) } }] },
+        // Not before they joined, either. The two conditions have to stay in
+        // step with the grid's, or the screen and the save disagree about who
+        // is on the sheet.
+        { OR: [{ joiningDate: null }, { joiningDate: { lte: lastOfMonth } }] },
+      ],
     },
     select: { id: true },
   });

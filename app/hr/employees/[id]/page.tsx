@@ -6,13 +6,14 @@ import { can, canReadBankDetailsOf } from "@/lib/permissions";
 import { formatDate, formatDateTime, todayInDhaka } from "@/lib/dates";
 import { documentLabel } from "@/lib/documents";
 import { certificateStatus } from "@/lib/certificate";
-import { leaveTypesFor } from "@/lib/leave-service";
+import { ensureEntitlements, leaveTypesFor } from "@/lib/leave-service";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
 import { DataList, DataRow } from "@/components/ui/DataList";
 import { AssignmentForm } from "@/components/hr/AssignmentForm";
 import { ContactChange, CorrectionRequestRow } from "@/components/hr/PendingApprovals";
 import { ReissuePassword } from "@/components/hr/ReissuePassword";
+import { AdjustLeave } from "@/components/hr/AdjustLeave";
 
 type Props = { params: Promise<{ id: string }> };
 
@@ -45,6 +46,12 @@ export default async function Page({ params }: Props) {
     },
   });
   if (!employee) notFound();
+
+  // Granted before it is read, exactly as the person's own leave page does.
+  // Without this a joiner shows "0 of 0" to whoever opens their file until
+  // they happen to visit their own screen — and HR, looking at zeros, would
+  // reasonably conclude they had no entitlement at all.
+  await ensureEntitlements(employee, today.getUTCFullYear());
 
   const [balances, branches, departments, designations, grades, managers] = await Promise.all([
     leaveTypesFor(employee, today.getUTCFullYear()),
@@ -232,11 +239,27 @@ export default async function Page({ params }: Props) {
             {balances.map((type) => (
               <div key={type.id}>
                 <p className="text-xs uppercase tracking-wide text-ink-400">{type.name}</p>
-                <p className="text-xl font-bold tabular text-ink-900">{type.balance.applicable}</p>
-                <p className="text-xs text-ink-500">of {type.balance.entitled}</p>
+                <p className="text-xl font-bold tabular text-ink-900">
+                  {type.uncounted ? "—" : type.balance.applicable}
+                </p>
+                <p className="text-xs text-ink-500">
+                  {type.uncounted ? "not counted" : `of ${type.balance.entitled}`}
+                </p>
               </div>
             ))}
           </div>
+
+          {can(context.viewer, "employees.setup") && balances.length > 0 && (
+            <div className="mt-5 border-t border-ink-300/40 pt-5">
+              <AdjustLeave
+                employeeId={employee.id}
+                year={today.getUTCFullYear()}
+                types={balances
+                  .filter((t) => !t.uncounted)
+                  .map((t) => ({ id: t.id, name: t.name }))}
+              />
+            </div>
+          )}
         </Card>
       </section>
 
