@@ -202,7 +202,7 @@ The employee logs in and the pages described in Section 5 are there. Their file 
 
 **Page 4 — Leave and monthly attendance.** Three things on one screen: apply for leave; see every application this month with its current position in the approval chain; and see the month's attendance, which appears only **after HR publishes it**. Before that it reads "Not yet published".
 
-**Always available — calendar and notes.** Every panel carries a calendar showing public holidays, the Friday–Saturday weekly off and the person's own approved leave, plus a private notes area that nobody else can read.  HR can announce a meeting with (Employee, Branch, Full Company) in that calendar and will be notified to all or selected persons. 
+**Always available — calendar and notes.** Every panel carries a calendar showing public holidays, the Friday–Saturday weekly off and the person's own approved leave, plus a private notes area that nobody else can read. *(FCSL, 10 September 2026)* Each note is written for a day picked on the calendar — a meeting in three days is noted on that day — and that morning the person's bell reminds them. The reminder never carries the note's words and never goes by email.  HR can announce a meeting with (Employee, Branch, Full Company) in that calendar and will be notified to all or selected persons. 
 
 |  |
 | :-: |

@@ -228,7 +228,7 @@ Set these for **Production** (and Preview, if you want previews to work). `DATAB
 
 ### 3.3 The scheduled jobs
 
-`vercel.json` declares one cron at `0 2 * * *` — **02:00 UTC, which is 08:00 in Dhaka**, because §8 asks for a *morning* summary. One entry rather than six: `runJobs` already runs them in order with the digest last, so a single schedule gets the ordering for free and does not spend the cron allowance that Vercel's cheaper plans meter.
+`vercel.json` declares one cron at `0 2 * * *` — **02:00 UTC, which is 08:00 in Dhaka**, because §8 asks for a *morning* summary. One entry rather than eight: `runJobs` already runs them in order with the digest last, so a single schedule gets the ordering for free and does not spend the cron allowance that Vercel's cheaper plans meter.
 
 Cron is a **Pro** feature. On Hobby the app works completely; the certificate warnings, attendance chasing, escalations and the morning digest simply never fire, and the bell still fills up correctly because those notifications are written by the actions themselves.
 

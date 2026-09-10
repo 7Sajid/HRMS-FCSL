@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/db";
 import { getSessionContext } from "@/lib/auth";
+import { fromISODate } from "@/lib/dates";
 
 export type NoteResult = { ok: true } | { error: string };
 
@@ -23,6 +24,8 @@ export type NoteResult = { ok: true } | { error: string };
 
 const schema = z.object({
   body: z.string().trim().min(1, "Write something first.").max(5000, "That note is too long."),
+  // Every note is for a day (FCSL, 10 September 2026) — picked on the calendar.
+  date: z.string().trim().min(1, "Pick the day this note is for."),
 });
 
 export async function saveNote(_previous: unknown, formData: FormData): Promise<NoteResult> {
@@ -31,19 +34,28 @@ export async function saveNote(_previous: unknown, formData: FormData): Promise<
 
   const parsed = schema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]!.message };
+  const date = fromISODate(parsed.data.date);
+  if (!date) return { error: "That is not a date." };
 
   const id = String(formData.get("id") ?? "").trim();
 
   if (id) {
     // Scoped in the query: a note id belonging to somebody else matches
     // nothing rather than being fetched and then compared.
-    const updated = await prisma.note.updateMany({
-      where: { id, userId: context.user.id },
-      data: { body: parsed.data.body },
-    });
+    const [, updated] = await prisma.$transaction([
+      // Moved to another day: it rings again on the new one.
+      prisma.note.updateMany({
+        where: { id, userId: context.user.id, NOT: { date } },
+        data: { remindedAt: null },
+      }),
+      prisma.note.updateMany({
+        where: { id, userId: context.user.id },
+        data: { body: parsed.data.body, date },
+      }),
+    ]);
     if (updated.count === 0) return { error: "Not found." };
   } else {
-    await prisma.note.create({ data: { userId: context.user.id, body: parsed.data.body } });
+    await prisma.note.create({ data: { userId: context.user.id, body: parsed.data.body, date } });
   }
 
   revalidatePath("/me/calendar");

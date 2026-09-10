@@ -474,10 +474,18 @@ model Note {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   body      String
+  /// The day the note is for. A meeting in three days is written against that
+  /// day, not today (FCSL, 10 September 2026).
+  date       DateTime  @db.Date
+  /// When that morning's reminder went into the bell. Cleared when the note is
+  /// moved to another day, so it rings again on the new one.
+  remindedAt DateTime? @db.Timestamptz(3)
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
   @@index([userId, updatedAt])
+  @@index([userId, date])
+  @@index([date, remindedAt])
 }
 
 // ===========================================================================

@@ -63,6 +63,7 @@ export type JobName =
   | "idle-uploads"
   | "access"
   | "purge"
+  | "notes"
   | "digest";
 
 /**
@@ -85,6 +86,7 @@ export const JOB_NAMES: readonly JobName[] = [
   "idle-uploads",
   "access",
   "purge",
+  "notes",
   "digest",
 ];
 
@@ -697,7 +699,77 @@ export async function runDocumentPurge(today = todayInDhaka()): Promise<JobResul
 }
 
 // ---------------------------------------------------------------------------
-// 7. The morning digest
+// 7. Reminders for your own notes
+// ---------------------------------------------------------------------------
+
+/**
+ * FCSL, 10 September 2026: a note written for a day rings the bell that
+ * morning.
+ *
+ * Bell only. The notification is created already marked as digested, so the
+ * morning email never carries it — a private note does not belong in an inbox,
+ * even as "you have a note today". It never carries the note's words either:
+ * only that notes exist, and a link to the day.
+ *
+ * Claimed and stamped in one statement, so a Vercel retry or a second run by
+ * hand cannot ring twice, and SKIP LOCKED lets two overlapping runs each take
+ * what the other has not.
+ *
+ * Nothing about whose notes they were reaches the permanent record — see
+ * app/actions/notes.ts for why notes write no audit line at all. The run is
+ * recorded as counts, like every job.
+ */
+export async function runNoteReminders(today = todayInDhaka()): Promise<JobResult> {
+  const day = toISODate(today);
+
+  const claimed = await prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<{ userId: string }[]>`
+      UPDATE "Note" SET "remindedAt" = NOW()
+      WHERE "id" IN (
+        SELECT n."id" FROM "Note" n
+        JOIN "User" u ON u."id" = n."userId"
+        WHERE n."date" = ${day}::date AND n."remindedAt" IS NULL AND u."disabledAt" IS NULL
+        ORDER BY n."id"
+        LIMIT ${JOB_BATCH}::int
+        FOR UPDATE OF n SKIP LOCKED
+      )
+      RETURNING "userId"`;
+
+    // One bell item per person, however many notes they left for today.
+    const perUser = new Map<string, number>();
+    for (const row of rows) perUser.set(row.userId, (perUser.get(row.userId) ?? 0) + 1);
+
+    if (perUser.size) {
+      await tx.notification.createMany({
+        data: [...perUser].map(([userId, count]) => ({
+          userId,
+          title: count === 1 ? "You have a note for today" : `You have ${count} notes for today`,
+          body: "",
+          link: `/me/calendar?m=${day.slice(0, 7)}&d=${day}`,
+          digestedAt: new Date(),
+        })),
+      });
+    }
+    return { notes: rows.length, people: perUser.size };
+  });
+
+  await recordQuietly({
+    action: "system.cron_ran",
+    targetType: "job",
+    targetLabel: "Note reminders",
+    detail: claimed,
+  });
+
+  return {
+    job: "notes",
+    considered: claimed.notes,
+    acted: claimed.people,
+    notes: claimed.people ? [`${claimed.people} person(s) reminded of ${claimed.notes} note(s)`] : [],
+  };
+}
+
+// ---------------------------------------------------------------------------
+// 8. The morning digest
 // ---------------------------------------------------------------------------
 
 /**
@@ -785,6 +857,7 @@ const JOBS: Record<JobName, (today?: Date) => Promise<JobResult>> = {
   "idle-uploads": runIdleUploads,
   access: runAccessClosure,
   purge: runDocumentPurge,
+  notes: runNoteReminders,
   digest: () => runMorningDigest(),
 };
 

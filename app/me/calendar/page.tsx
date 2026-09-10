@@ -1,5 +1,6 @@
+import Link from "next/link";
 import { prisma } from "@/lib/db";
-import { requireEmployee } from "@/lib/auth";
+import { requireOpenPanel } from "@/lib/auth";
 import {
   calendarDate,
   dayKind,
@@ -7,39 +8,58 @@ import {
   formatDate,
   formatDateTime,
   formatMonth,
+  fromISODate,
   toISODate,
   todayInDhaka,
 } from "@/lib/dates";
 import { calendarFor } from "@/lib/leave-service";
 import { Card, PageHeader } from "@/components/ui/Card";
-import { Notes } from "@/components/me/Notes";
+import { NoteForm, NoteList } from "@/components/me/Notes";
 
 export const metadata = { title: "Calendar & notes · FCSL HR" };
 
-type Props = { searchParams: Promise<{ m?: string }> };
+type Props = { searchParams: Promise<{ m?: string; d?: string }> };
 
 /**
  * §6, "Calendar and notes" — public holidays, the Friday–Saturday weekly off,
  * the person's own approved leave, and a private notes area nobody else can
  * read at any level, the Super Admin included.
+ *
+ * FCSL, 10 September 2026: every note is written for a day. Pick a day on the
+ * calendar and the note goes against it; the day shows that it holds notes, and
+ * that morning the bell says so (`runNoteReminders` in lib/jobs.ts).
+ *
+ * Every panel carries this page, so it asks for an open panel rather than an
+ * employee record. The first Super Admin has none: they get the company's
+ * holidays and announcements and their own notes, and no leave.
  */
 export default async function Page({ searchParams }: Props) {
-  const { employee, user } = await requireEmployee();
+  const { employee, user } = await requireOpenPanel();
   const today = todayInDhaka();
 
-  const requested = (await searchParams).m;
-  const [yearStr, monthStr] = (requested ?? "").split("-");
-  const year = Number(yearStr) || today.getUTCFullYear();
-  const month = Number(monthStr) || today.getUTCMonth() + 1;
+  const params = await searchParams;
+  const picked = fromISODate(params.d);
+  const [yearStr, monthStr] = (params.m ?? "").split("-");
+  // The month asked for; otherwise the picked day's month; otherwise this one.
+  const year = Number(yearStr) || picked?.getUTCFullYear() || today.getUTCFullYear();
+  const month = Number(monthStr) || (picked ? picked.getUTCMonth() + 1 : today.getUTCMonth() + 1);
 
   const first = calendarDate(year, month, 1);
   const last = calendarDate(year, month, daysInMonth(year, month));
+  // The day the notes panel is about: the one picked if it is in this month,
+  // else today if today is, else the 1st.
+  const inMonth = (date: Date) => date >= first && date <= last;
+  const selected = picked && inMonth(picked) ? picked : inMonth(today) ? today : first;
+  const monthKey = `${year}-${String(month).padStart(2, "0")}`;
+  const dayHref = (date: Date) =>
+    `/me/calendar?m=${toISODate(date).slice(0, 7)}&d=${toISODate(date)}`;
 
-  const [calendar, leaveDays, holidays, events, notes] = await Promise.all([
+  const [calendar, leaveDays, holidays, events, notesOnDay, upcoming, noteDays] = await Promise.all([
     calendarFor(year),
     prisma.leaveDay.findMany({
       where: {
-        employeeId: employee.id,
+        // Nobody's, for a Super Admin with no employee record.
+        employeeId: employee?.id ?? "__none__",
         date: { gte: first, lte: last },
         lengthDays: { gt: 0 },
         leaveRequest: { status: { in: ["PENDING", "GRANTED"] } },
@@ -53,19 +73,36 @@ export default async function Page({ searchParams }: Props) {
         endsAt: { gte: first },
         OR: [
           { scope: "COMPANY" },
-          { scope: "BRANCH", branchId: employee.branchId ?? "__none__" },
-          { scope: "EMPLOYEE", employeeId: employee.id },
+          { scope: "BRANCH", branchId: employee?.branchId ?? "__none__" },
+          { scope: "EMPLOYEE", employeeId: employee?.id ?? "__none__" },
         ],
       },
       orderBy: { startsAt: "asc" },
     }),
-    prisma.note.findMany({ where: { userId: user.id }, orderBy: { updatedAt: "desc" }, take: 50 }),
+    // Every read is scoped to the person asking, in the query. There is no
+    // path from this page to anybody else's notes.
+    prisma.note.findMany({
+      where: { userId: user.id, date: selected },
+      orderBy: { createdAt: "asc" },
+      take: 50,
+    }),
+    prisma.note.findMany({
+      where: { userId: user.id, date: { gte: today }, NOT: { date: selected } },
+      orderBy: [{ date: "asc" }, { createdAt: "asc" }],
+      take: 10,
+    }),
+    prisma.note.groupBy({
+      by: ["date"],
+      where: { userId: user.id, date: { gte: first, lte: last } },
+      _count: { _all: true },
+    }),
   ]);
 
   const leaveByDate = new Map(
     leaveDays.map((d) => [toISODate(d.date), { type: d.leaveType.name, status: d.leaveRequest.status }]),
   );
   const holidayByDate = new Map(holidays.map((h) => [toISODate(h.date), h.name]));
+  const notesByDate = new Map(noteDays.map((row) => [toISODate(row.date), row._count._all]));
 
   // Monday-first, which is how a Bangladeshi working week reads with Friday
   // and Saturday at the end.
@@ -77,12 +114,24 @@ export default async function Page({ searchParams }: Props) {
 
   const previous = month === 1 ? `${year - 1}-12` : `${year}-${String(month - 1).padStart(2, "0")}`;
   const next = month === 12 ? `${year + 1}-01` : `${year}-${String(month + 1).padStart(2, "0")}`;
+  const selectedIso = toISODate(selected);
+  const rows = (notes: typeof notesOnDay) =>
+    notes.map((n) => ({
+      id: n.id,
+      body: n.body,
+      date: toISODate(n.date),
+      updatedAt: formatDateTime(n.updatedAt),
+    }));
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <PageHeader
         title="Calendar & notes"
-        subtitle="Holidays, your weekly off, your own leave — and a notepad only you can read."
+        subtitle={
+          employee
+            ? "Holidays, your weekly off, your own leave — and notes only you can read. Pick a day to write a note for it."
+            : "Holidays and announcements — and notes only you can read. Pick a day to write a note for it."
+        }
       />
 
       <div className="grid gap-6 lg:grid-cols-[1fr_20rem] [&>*]:min-w-0">
@@ -121,7 +170,9 @@ export default async function Page({ searchParams }: Props) {
                 const kind = dayKind(date, calendar.holidays, calendar.weeklyOffDays);
                 const leave = leaveByDate.get(iso);
                 const holidayName = holidayByDate.get(iso);
+                const noteCount = notesByDate.get(iso) ?? 0;
                 const isToday = iso === toISODate(today);
+                const isSelected = iso === selectedIso;
 
                 let tone = "bg-white text-ink-900";
                 if (kind === "WEEKLY_OFF") tone = "bg-surface text-ink-400";
@@ -132,14 +183,38 @@ export default async function Page({ searchParams }: Props) {
                       ? "bg-brand-50 text-brand-500"
                       : "bg-brand-50/50 text-brand-400";
 
+                const label = [
+                  formatDate(date),
+                  holidayName,
+                  leave ? `${leave.type}${leave.status === "PENDING" ? " (applied)" : ""}` : null,
+                  noteCount ? `${noteCount} note${noteCount === 1 ? "" : "s"}` : null,
+                ]
+                  .filter(Boolean)
+                  .join(", ");
+
                 return (
-                  <div
+                  <Link
                     key={iso}
-                    className={`min-h-[64px] rounded-lg border p-1.5 text-left ${tone} ${
-                      isToday ? "border-brand-500" : "border-ink-300/30"
+                    href={dayHref(date)}
+                    scroll={false}
+                    aria-label={label}
+                    aria-current={isSelected ? "date" : undefined}
+                    className={`block min-h-[64px] rounded-lg border p-1.5 text-left transition-colors hover:border-brand-500/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-100 ${tone} ${
+                      isSelected
+                        ? "border-brand-500 ring-2 ring-brand-500/30"
+                        : isToday
+                          ? "border-brand-500"
+                          : "border-ink-300/30"
                     }`}
                   >
-                    <div className="text-xs font-medium">{date.getUTCDate()}</div>
+                    <div className="flex items-start justify-between gap-1">
+                      <span className="text-xs font-medium">{date.getUTCDate()}</span>
+                      {noteCount > 0 && (
+                        <span className="rounded-full bg-brand-500 px-1.5 text-[10px] font-medium leading-4 text-white">
+                          {noteCount}
+                        </span>
+                      )}
+                    </div>
                     {holidayName && <div className="mt-0.5 text-[10px] leading-tight">{holidayName}</div>}
                     {leave && (
                       <div className="mt-0.5 text-[10px] leading-tight">
@@ -147,7 +222,7 @@ export default async function Page({ searchParams }: Props) {
                         {leave.status === "PENDING" ? " (applied)" : ""}
                       </div>
                     )}
-                  </div>
+                  </Link>
                 );
               })}
             </div>
@@ -155,7 +230,13 @@ export default async function Page({ searchParams }: Props) {
             <div className="mt-4 flex flex-wrap gap-3 text-[11px] text-ink-500">
               <Key className="bg-surface" label="Weekly off — Friday and Saturday" />
               <Key className="bg-warn-50" label="Public holiday" />
-              <Key className="bg-brand-50" label="Your leave" />
+              {employee && <Key className="bg-brand-50" label="Your leave" />}
+              <span className="inline-flex items-center gap-1.5">
+                <span className="rounded-full bg-brand-500 px-1.5 text-[10px] font-medium leading-4 text-white">
+                  1
+                </span>
+                Notes you wrote for that day
+              </span>
             </div>
           </Card>
 
@@ -199,15 +280,40 @@ export default async function Page({ searchParams }: Props) {
             <h2 className="text-xs font-semibold tracking-widest text-ink-400">MY NOTES</h2>
             <p className="mb-4 mt-2 text-xs text-ink-500">
               Private to you. Nobody else can read these — not your manager, not HR, not the Super
-              Admin.
+              Admin. On the morning of the day, your bell reminds you.
             </p>
-            <Notes
-              notes={notes.map((n) => ({
-                id: n.id,
-                body: n.body,
-                updatedAt: formatDateTime(n.updatedAt),
-              }))}
-            />
+
+            <p className="mb-2 text-sm font-medium text-ink-900">
+              {formatDate(selected)}
+              {selectedIso === toISODate(today) ? " · today" : ""}
+            </p>
+            <NoteList notes={rows(notesOnDay)} emptyText="Nothing written for this day yet." />
+
+            <div className="mt-4 border-t border-ink-300/30 pt-4">
+              <NoteForm key={selectedIso} date={selectedIso} />
+            </div>
+
+            {upcoming.length > 0 && (
+              <div className="mt-6 border-t border-ink-300/30 pt-4">
+                <h3 className="mb-2 text-xs font-semibold tracking-widest text-ink-400">COMING UP</h3>
+                <ul className="-mx-2 space-y-1">
+                  {upcoming.map((note) => (
+                    <li key={note.id}>
+                      <Link
+                        href={dayHref(note.date)}
+                        scroll={false}
+                        className="block rounded-lg px-2 py-1.5 hover:bg-surface"
+                      >
+                        <span className="text-xs font-medium text-ink-700">{formatDate(note.date)}</span>
+                        <span className="block truncate text-xs text-ink-500">
+                          {note.body.split("\n")[0]}
+                        </span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </Card>
         </div>
       </div>

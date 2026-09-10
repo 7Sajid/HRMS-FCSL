@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import bcrypt from "bcryptjs";
 import { addDays, calendarDate, todayInDhaka, toISODate } from "../lib/dates";
-import { runAccessClosure } from "../lib/jobs";
+import { runAccessClosure, runNoteReminders } from "../lib/jobs";
 import { ACTION_GROUPS, ACTION_LABELS, actionLabel } from "../lib/audit";
 import { employeeRecordScope } from "../lib/permissions";
 import { showCauseReplyPdf } from "../lib/pdf";
@@ -1587,6 +1587,57 @@ async function main() {
   // The one that matters: request headers carry the session cookie, and a log
   // line holding a live session is a way in for anybody who can read the log.
   check("[source] and no request header is ever logged", !/headers/.test(hook));
+
+  // ---------------------------------------------------------------------
+  console.log("\n31 · A note written for a day rings the bell that morning (10 September 2026)");
+  // ---------------------------------------------------------------------
+  {
+    const writer = await fixture("qa-reg-notes@qa.fcsl.invalid", "QA Note Writer", {});
+    const closed = await fixture("qa-reg-notes-off@qa.fcsl.invalid", "QA Closed Note Writer", {});
+    await prisma.user.update({ where: { id: closed.userId }, data: { disabledAt: new Date() } });
+    // A fixed day years ahead, so the run touches nobody's real notes.
+    const day = calendarDate(2031, 3, 4);
+    await prisma.note.createMany({
+      data: [
+        { userId: writer.userId, body: "Meeting with two people — bring the file.", date: day },
+        { userId: writer.userId, body: "Second note.", date: day },
+        { userId: writer.userId, body: "The day after.", date: addDays(day, 1) },
+        { userId: closed.userId, body: "Nobody to tell.", date: day },
+      ],
+    });
+    const bellFor = (userId: string) =>
+      prisma.notification.findMany({ where: { userId, title: { contains: "note" } } });
+
+    const firstRun = await runNoteReminders(day);
+    const bell = await bellFor(writer.userId);
+    check(
+      "two notes on the same day make one bell item",
+      bell.length === 1 && bell[0]!.title === "You have 2 notes for today",
+      JSON.stringify(bell.map((b) => b.title)),
+    );
+    check("it carries none of the note's words", bell.every((b) => b.body === "" && !/Meeting/.test(b.title)));
+    check(
+      "it links to that day on the calendar",
+      bell[0]?.link === "/me/calendar?m=2031-03&d=2031-03-04",
+      bell[0]?.link,
+    );
+    check("and it never goes into the morning email", bell.every((b) => b.digestedAt !== null));
+    check("a closed account is not reminded", (await bellFor(closed.userId)).length === 0);
+    const secondRun = await runNoteReminders(day);
+    check(
+      "a second run the same morning rings nothing more",
+      secondRun.acted === 0 && (await bellFor(writer.userId)).length === 1,
+      JSON.stringify({ first: firstRun.acted, second: secondRun.acted }),
+    );
+    check(
+      "[source] moving a note to another day clears its reminder",
+      /NOT: \{ date \}[\s\S]{0,80}remindedAt: null/.test(source("app/actions/notes.ts")),
+    );
+    check(
+      "[source] the reminder runs nightly, before the digest",
+      /"notes",\s*\n\s*"digest"/.test(source("lib/jobs.ts")),
+    );
+  }
 
   if (sequenceBefore) {
     await prisma.employeeIdSequence.update({

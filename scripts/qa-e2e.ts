@@ -29,7 +29,7 @@ import { certificateStatus } from "../lib/certificate";
 import { exitBlockers, purgeDateFor, CLEARANCE_CHECKLIST } from "../lib/exit";
 import { headcount, leaveReport, terminalReport } from "../lib/reports";
 import { disableAccountAs } from "../lib/accounts";
-import { runJobs } from "../lib/jobs";
+import { JOB_NAMES, runJobs } from "../lib/jobs";
 import { auditWhere, readFilters } from "../lib/audit-query";
 import { addDays, calendarDate, daysInMonth, todayInDhaka, toISODate } from "../lib/dates";
 
@@ -787,7 +787,7 @@ async function main() {
       canReadBankDetailsOf({ id: rm.user.id, role: "EMPLOYEE" }, rm.employee.id, rm.employee.id),
     );
 
-    const note = await prisma.note.create({ data: { userId: rm.user.id, body: "A private note." } });
+    const note = await prisma.note.create({ data: { userId: rm.user.id, body: "A private note.", date: today } });
     check("the owner may read their own note", canReadNote(note, rm.user.id));
     check("the Super Admin may not — nobody may, at any level", !canReadNote(note, admin.user.id));
     check("nor the HR Head", !canReadNote(note, head.user.id));
@@ -902,7 +902,7 @@ async function main() {
     section("13 · The scheduled jobs run over all of it (§8)");
 
     const results = await runJobs("all", today);
-    check("every job ran", results.length === 6, results.map((r) => r.job).join(", "));
+    check("every job ran", results.length === JOB_NAMES.length, results.map((r) => r.job).join(", "));
     check("none of them threw", !results.some((r) => r.notes.some((n) => n.startsWith("Failed:"))));
 
     const digest = results.find((r) => r.job === "digest")!;
