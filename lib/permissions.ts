@@ -89,19 +89,22 @@ const GRANTS: Record<Role, readonly Capability[]> = {
 
   HR_EXECUTIVE: [
     "employees.readAll",
-    "team.readRecords",
     "documents.readAny",
     "bankDetails.read",
     "employees.setup",
     "documents.approve",
     "accounts.create",
-    "requisitions.raise",
     "attendance.verify",
     "certificates.manage",
     "exits.record",
     // Deliberately absent, from §5.3's own CANNOT list: approve leave, approve
     // requisitions, issue show-cause letters, create or close branches, manage
     // trading terminals, see company-wide reports.
+    //
+    // Also absent since FCSL amended §9 on 10 September 2026: team.readRecords
+    // and requisitions.raise. "My team" and raising a requisition belong to
+    // managers, department heads and the HR Head. An HR Executive raises none
+    // and sees nobody else's; like anybody else, they ask their manager.
     //
     // The division is the point: the HR Executive handles RECORDS, the HR Head
     // handles DECISIONS. One person entering the data and a different person
@@ -128,22 +131,26 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "showcause.issue",
     "showcause.readAny",
     "reports.read",
-    "audit.read",
     "settings.manage",
+    // Deliberately absent since FCSL amended §9 on 10 September 2026:
+    // audit.read. The permanent record is the Super Admin's alone.
   ],
 
   SUPER_ADMIN: [
     "employees.readAll",
-    "team.readRecords",
     "documents.readAny",
     "employees.setup",
     "documents.approve",
     "accounts.create",
     "accounts.manage",
-    "leave.approve",
     "leave.approveFinal",
-    "requisitions.raise",
     "requisitions.approve",
+    // Removed when FCSL amended §9 on 10 September 2026: team.readRecords,
+    // requisitions.raise and leave.approve. "My team" — the roster, raising a
+    // requisition, "leave waiting for me" — is for managers, department heads
+    // and the HR Head. The Super Admin still decides everything that reaches
+    // the top, including the HR Head's own leave, on Final approvals: that is
+    // leave.approveFinal and requisitions.approve, not these.
     "certificates.manage",
     "terminals.manage",
     "exits.record",

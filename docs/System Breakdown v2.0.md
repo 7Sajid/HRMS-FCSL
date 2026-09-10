@@ -345,7 +345,7 @@ One form, four types. The form changes to suit the type chosen, but the journey 
 
 |  |
 | :-: |
-| **DECIDED — WHO MAY RAISE ONE****Managers, HR Executives, the HR Head and the Super Admin only.** Employees and RMs cannot raise a requisition — they ask their manager, who raises it on their behalf. The requisition then goes from the manager to the HR Head, and above a value FCSL sets, to the Super Admin. The requester watches it move through those steps on their own screen and is told the moment it is decided, which removes the follow-up phone calls that make up most of the delay in a paper process. |
+| **DECIDED — WHO MAY RAISE ONE****Managers, department heads and the HR Head only** *(amended by FCSL, 10 September 2026)*. Employees, RMs and HR Executives cannot raise a requisition — they ask their manager, who raises it on their behalf. The requisition then goes from the manager to the HR Head, and above a value FCSL sets, to the Super Admin. The HR Head's own requisition goes straight to the Super Admin. The requester watches it move through those steps on their own screen and is told the moment it is decided, which removes the follow-up phone calls that make up most of the delay in a paper process. |
 
 ### **6.5   Compliance and show-cause letters**
 
@@ -433,7 +433,7 @@ This part has no screen of its own and most people will never think about it. It
 | :-: |
 | **WHAT A LINE LOOKS LIKE, IN PLAIN WORDS***"Rahim Uddin (HR Executive) approved the documents of Karim Hossain at 11:42 on 14 March 2026."**"Nasreen Akter (HR Head) opened the NID of Salma Begum at 09:15 on 2 April 2026."**"Employee A 288 - 19 - 70 marked Left on 30 April 2026 by Rahim Uddin — terminal DSE-4471 surrendered."* |
 
-**What gets recorded:** every approval and refusal with its reason · every document uploaded, replaced or viewed · every change to personal, bank or employment details, with the old value and the new · every login and failed login attempt · every export of employee data. Only the Super Admin and the HR Head can read it, and they can only read it.
+**What gets recorded:** every approval and refusal with its reason · every document uploaded, replaced or viewed · every change to personal, bank or employment details, with the old value and the new · every login and failed login attempt · every export of employee data. Only the Super Admin can read it *(amended by FCSL, 10 September 2026 — previously the HR Head as well)*, and they can only read it.
 
 ## **7. How an approval travels**
 
@@ -488,7 +488,7 @@ Had the manager pressed **Deny** on Monday afternoon, the story would have ended
 | :-: | :-: |
 | **What** | **The route** |
 | **A new person's documents** | The person uploads → **HR Executive or HR Head** approves. Done. The exception is the HR Head's own documents, which go to the Super Admin. |
-| **Requisition** | Raised by a manager or HR → **HR Head** → **Super Admin**, but only if it is above the value FCSL sets. Below that value the HR Head's approval is final. Employees and RMs cannot raise one. |
+| **Requisition** | Raised by a manager, department head or the HR Head → **HR Head** → **Super Admin**, but only if it is above the value FCSL sets. Below that value the HR Head's approval is final. The HR Head's own requisition goes straight to the **Super Admin**. Employees, RMs and HR Executives cannot raise one. |
 | **Branch attendance sheet** | Branch manager submits → **HR verifies and corrects** → HR publishes → every employee in that branch can see their own month. |
 
 ### **7.3   What happens when nobody responds**
@@ -538,13 +538,13 @@ This table is the privacy policy of the system, and the part employees will ask 
 | :-: | :-: | :-: | :-: | :-: | :-: |
 | **Can see or do…** | **Employee / RM** | **Manager** | **HR Executive** | **HR Head** | **Super Admin** |
 | Their own record and documents | **✓** | **✓** | **✓** | **✓** | **✓** |
-| Their own team's records | — | **✓** | **✓** | **✓** | **✓** |
+| Their own team's records | — | **✓** | — | **✓** | — |
 | Their own team's **documents** | — | — | **✓** | **✓** | **✓** |
 | Every employee in every branch | — | — | **✓** | **✓** | **✓** |
 | Bank details of others | — | — | **✓** | **✓** | — |
-| Approve leave — first step for their team | — | **✓** | — | **✓** | **✓** |
+| Approve leave — first step for their team | — | **✓** | — | **✓** | — |
 | **Final approval of leave** | — | — | — | — | **✓** |
-| Raise a requisition | — | **✓** | **✓** | **✓** | **✓** |
+| Raise a requisition | — | **✓** | — | **✓** | — |
 | Approve requisitions | — | — | — | **✓** | **✓** |
 | Approve documents, create accounts | — | — | **✓** | **✓** | **✓** |
 | Submit branch attendance | — | **✓** | — | — | — |
@@ -556,8 +556,10 @@ This table is the privacy policy of the system, and the part employees will ask 
 | **Read somebody else's show-cause file** | — | — | — | **✓** | **✓** |
 | Create and close branches | — | — | — | **✓** | **✓** |
 | Company-wide reports | — | — | — | **✓** | **✓** |
-| The permanent record of all actions | — | — | — | **✓** | **✓** |
+| The permanent record of all actions | — | — | — | — | **✓** |
 | Somebody else's private notes | — | — | — | — | — |
+
+**Amended by FCSL on 10 September 2026.** "My team" — the team roster, raising requisitions and the first step of a team's leave — is for managers, department heads and the HR Head; the HR Executive and the Super Admin have no team section. The Super Admin still gives the final approval on every leave application, the HR Head's own included, on their Final approvals page. The permanent record is read by the Super Admin alone.
 
   
   

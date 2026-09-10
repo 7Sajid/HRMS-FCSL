@@ -62,7 +62,9 @@ Three rules, and they are the part most likely to cause an argument later:
 - Employee ID is **`A XXX - YY - 70`**. `XXX` never resets and is never reused. The letter advances at 999. `YY` is the joining year. `70` is constant. The highest existing is `A 412 - 26 - 70`.
 - The RM certificate warns **four months** before expiry and **never blocks** the person or their work.
 - Documents are purged one year after the last working day; **the employee record is kept permanently** so headcount reports stay correct.
-- Requisitions are raised by managers, HR and the Super Admin only. Employees and RMs ask their manager.
+- Requisitions are raised by **managers, department heads and the HR Head only** (FCSL, 10 September 2026). Employees, RMs and HR Executives ask their manager. The HR Head's own requisition goes straight to the Super Admin.
+- **"My team" is for managers, department heads and the HR Head.** The HR Executive and the Super Admin have no team section (FCSL, 10 September 2026).
+- **The permanent record (`/admin/audit`) is the Super Admin's alone.** The HR Head does not read it (FCSL, 10 September 2026).
 - **Out of scope:** payroll, recruitment, appraisal, personal-trading surveillance, punch machines, SMS, Bangla, a mobile app, and any connection to the back office.
 - Reading NIDs with AI is **deferred**. HR types the fields manually. The schema leaves room for the amber-dot confirmation flow to arrive later.
 

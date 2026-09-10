@@ -76,7 +76,8 @@ async function main() {
     const pages: { path: string; capability: Capability; also?: Role[] }[] = [
       { path: "/admin/approvals", capability: "leave.approveFinal" },
       { path: "/admin/accounts", capability: "accounts.manage" },
-      { path: "/admin/audit", capability: "audit.read", also: ["HR_HEAD"] },
+      // The Super Admin's alone since FCSL's decision of 10 September 2026.
+      { path: "/admin/audit", capability: "audit.read" },
     ];
     const roles: Role[] = ["EMPLOYEE", "MANAGER", "HR_EXECUTIVE", "HR_HEAD", "SUPER_ADMIN"];
     for (const page of pages) {

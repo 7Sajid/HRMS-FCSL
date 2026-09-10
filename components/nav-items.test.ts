@@ -27,6 +27,7 @@ describe("the menu each panel gets", () => {
   it("gives a manager their team and nothing of HR's", () => {
     const links = hrefs("MANAGER");
     expect(links).toContain("/team/approvals");
+    expect(links).toContain("/team/roster");
     expect(links).toContain("/team/attendance");
     expect(links).toContain("/team/requisitions");
     expect(links.filter((h) => h.startsWith("/hr/"))).toEqual([]);
@@ -44,12 +45,17 @@ describe("the menu each panel gets", () => {
     expect(links).not.toContain("/hr/terminals");
     expect(links).not.toContain("/hr/compliance");
     expect(links).not.toContain("/hr/reports");
-    expect(links).not.toContain("/team/approvals");
+    // FCSL, 10 September 2026: no "My team" section at all — no team, no
+    // requisitions, no leave to approve.
+    expect(links.filter((h) => h.startsWith("/team/"))).toEqual([]);
   });
 
   it("gives the HR Head the widest panel in the system", () => {
     const links = hrefs("HR_HEAD");
     for (const href of [
+      "/team/approvals",
+      "/team/roster",
+      "/team/requisitions",
       "/hr/joiners",
       "/hr/approvals",
       "/hr/branches",
@@ -57,10 +63,12 @@ describe("the menu each panel gets", () => {
       "/hr/compliance",
       "/hr/reports",
       "/hr/settings",
-      "/admin/audit",
     ]) {
       expect(links).toContain(href);
     }
+    // FCSL, 10 September 2026: the permanent record is the Super Admin's
+    // alone. Nothing under /admin/ appears in this menu.
+    expect(links.filter((h) => h.startsWith("/admin/"))).toEqual([]);
   });
 
   it("keeps the Super Admin's panel small, and without attendance", () => {
@@ -73,20 +81,26 @@ describe("the menu each panel gets", () => {
     expect(links).not.toContain("/hr/attendance");
     // §12.2 puts leave types and the holiday calendar in the HR Head's hands.
     expect(links).not.toContain("/hr/settings");
+    // FCSL, 10 September 2026: "My team" is for managers, department heads and
+    // the HR Head. The Super Admin's leave decisions are on Final approvals.
+    expect(links.filter((h) => h.startsWith("/team/"))).toEqual([]);
 
-    // The Super Admin's menu is NOT shorter than the HR Head's, and that is
-    // correct rather than a bug: §9 grants them almost everything HR has. What
-    // makes the panel "small... used rarely" (§5.5) is how much of it they
-    // touch, not how many entries it holds. The two differ by exactly four
-    // items, and each one is a row in §9.
+    // Neither menu contains the other, and that is correct rather than a bug.
+    // What makes the Super Admin's panel "small... used rarely" (§5.5) is how
+    // much of it they touch, not how many entries it holds. Every difference
+    // below is a row in §9 as FCSL amended it.
     const head = hrefs("HR_HEAD");
     expect(links.filter((h) => !head.includes(h)).sort()).toEqual([
       "/admin/accounts",
       "/admin/approvals",
+      "/admin/audit",
     ]);
     expect(head.filter((h) => !links.includes(h)).sort()).toEqual([
       "/hr/attendance",
       "/hr/settings",
+      "/team/approvals",
+      "/team/requisitions",
+      "/team/roster",
     ]);
   });
 

@@ -21,8 +21,9 @@ export async function raiseRequisition(
   const context = await getSessionContext();
   if (!context?.employee) return { error: "Please sign in again." };
 
-  // §6.4: managers, HR and the Super Admin only. Employees and RMs ask their
-  // manager, who raises it on their behalf.
+  // §6.4, as FCSL amended it on 10 September 2026: managers, department heads
+  // and the HR Head only. Everybody else — employees, RMs, HR Executives — asks
+  // their manager, who raises it on their behalf.
   if (!can(context.viewer, "requisitions.raise")) {
     return { error: "Ask your manager to raise this for you." };
   }
@@ -49,7 +50,7 @@ export async function raiseRequisition(
   const threshold = Number(setting?.value ?? DEFAULT_THRESHOLD);
   // §7.2: above the value FCSL sets it goes on to the Super Admin; below it,
   // the HR Head's approval is final.
-  const chain = requisitionChain(amount !== null && amount > threshold);
+  const chain = requisitionChain(amount !== null && amount > threshold, context.user.role);
 
   const employee = context.employee;
   const ip = await currentIp();
@@ -78,7 +79,7 @@ export async function raiseRequisition(
       targetType: "requisition",
       targetId: requisition.id,
       targetLabel: `${employee.fullName} — ${spec.label}`,
-      detail: { type, amount, aboveThreshold: chain.length > 1, details },
+      detail: { type, amount, aboveThreshold: amount !== null && amount > threshold, details },
       ip,
       tx,
     });
@@ -92,7 +93,8 @@ export async function raiseRequisition(
         userId: u.id,
         title: `${employee.fullName} raised a requisition — ${spec.label.toLowerCase()}`,
         body: amount ? `৳${amount.toLocaleString("en-BD")}` : "",
-        link: "/hr/approvals",
+        // The HR Head's own requisition starts at the Super Admin's desk.
+        link: chain[0] === "SUPER_ADMIN" ? "/admin/approvals" : "/hr/approvals",
       })),
       tx,
     );

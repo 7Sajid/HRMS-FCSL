@@ -80,7 +80,8 @@ async function main() {
       { path: "/hr/compliance", capability: "showcause.issue" },
       { path: "/hr/reports", capability: "reports.read" },
       { path: "/hr/settings", capability: "settings.manage" },
-      { path: "/admin/audit", capability: "audit.read" },
+      // Not /admin/audit: FCSL made the permanent record the Super Admin's
+      // alone on 10 September 2026. Asserted as a refusal below.
     ];
     const roles: Role[] = ["EMPLOYEE", "MANAGER", "HR_EXECUTIVE", "HR_HEAD", "SUPER_ADMIN"];
     for (const page of pages) {
@@ -108,6 +109,10 @@ async function main() {
     check(
       "settings belong to the HR Head, not the Super Admin",
       can(asRole("HR_HEAD"), "settings.manage") && !can(asRole("SUPER_ADMIN"), "settings.manage"),
+    );
+    check(
+      "the permanent record is refused to the HR Head (FCSL, 10 September 2026)",
+      !can(asRole("HR_HEAD"), "audit.read") && can(asRole("SUPER_ADMIN"), "audit.read"),
     );
 
     // -----------------------------------------------------------------------

@@ -30,14 +30,17 @@ const ROLES: Role[] = ["EMPLOYEE", "MANAGER", "HR_EXECUTIVE", "HR_HEAD", "SUPER_
 /** "—✓✓✓✓" reads as the document prints it. */
 type Row = { spec: string; capability: Capability; grid: string };
 
+// Rows marked "10 Sep" were amended by FCSL on 10 September 2026: "My team",
+// raising a requisition and the first leave step are for managers and the HR
+// Head only, and the permanent record is the Super Admin's alone.
 const SECTION_9: Row[] = [
-  { spec: "Their own team's records", capability: "team.readRecords", grid: "—✓✓✓✓" },
+  { spec: "Their own team's records (10 Sep)", capability: "team.readRecords", grid: "—✓—✓—" },
   { spec: "Their own team's documents", capability: "documents.readAny", grid: "——✓✓✓" },
   { spec: "Every employee in every branch", capability: "employees.readAll", grid: "——✓✓✓" },
   { spec: "Bank details of others", capability: "bankDetails.read", grid: "——✓✓—" },
-  { spec: "Approve leave — first step for their team", capability: "leave.approve", grid: "—✓—✓✓" },
+  { spec: "Approve leave — first step for their team (10 Sep)", capability: "leave.approve", grid: "—✓—✓—" },
   { spec: "Final approval of leave", capability: "leave.approveFinal", grid: "————✓" },
-  { spec: "Raise a requisition", capability: "requisitions.raise", grid: "—✓✓✓✓" },
+  { spec: "Raise a requisition (10 Sep)", capability: "requisitions.raise", grid: "—✓—✓—" },
   { spec: "Approve requisitions", capability: "requisitions.approve", grid: "———✓✓" },
   { spec: "Approve documents, create accounts", capability: "documents.approve", grid: "——✓✓✓" },
   { spec: "Approve documents, create accounts", capability: "accounts.create", grid: "——✓✓✓" },
@@ -50,7 +53,7 @@ const SECTION_9: Row[] = [
   { spec: "Read somebody else's show-cause file", capability: "showcause.readAny", grid: "———✓✓" },
   { spec: "Create and close branches", capability: "branches.manage", grid: "———✓✓" },
   { spec: "Company-wide reports", capability: "reports.read", grid: "———✓✓" },
-  { spec: "The permanent record of all actions", capability: "audit.read", grid: "———✓✓" },
+  { spec: "The permanent record of all actions (10 Sep)", capability: "audit.read", grid: "————✓" },
 ];
 
 const viewer = (role: Role): Viewer => ({ id: `viewer-${role}`, role });
@@ -101,6 +104,9 @@ describe("§5.3 — what an HR Executive CANNOT do", () => {
   // approving it is the control a regulator expects to see.
   const forbidden: Capability[] = [
     "leave.approve",
+    // Added when FCSL amended §9 on 10 September 2026.
+    "team.readRecords",
+    "requisitions.raise",
     "requisitions.approve",
     "showcause.issue",
     "branches.manage",

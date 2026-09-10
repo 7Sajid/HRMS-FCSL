@@ -28,8 +28,15 @@ export const LEAVE_CHAIN: Record<Role, readonly Role[]> = {
 /**
  * §7.2 — a requisition goes to the HR Head, and above a value FCSL sets, to
  * the Super Admin. Below that value the HR Head's approval is final.
+ *
+ * The HR Head's OWN requisition skips their desk and goes to the Super Admin
+ * whatever the amount, the same shape as their own leave (§7.1). Otherwise it
+ * lands in their own inbox and they approve it themselves — which mattered
+ * little while anybody in HR could raise one, and matters now that FCSL has
+ * named the HR Head as one of only two kinds of person who can.
  */
-export function requisitionChain(aboveThreshold: boolean): readonly Role[] {
+export function requisitionChain(aboveThreshold: boolean, raiserRole: Role): readonly Role[] {
+  if (raiserRole === "HR_HEAD") return ["SUPER_ADMIN"];
   return aboveThreshold ? ["HR_HEAD", "SUPER_ADMIN"] : ["HR_HEAD"];
 }
 

@@ -106,10 +106,16 @@ describe("rule 3 — who is told on final approval", () => {
 
 describe("§7.2 — the requisition route", () => {
   it("stops at the HR Head below the threshold FCSL sets", () => {
-    expect(requisitionChain(false)).toEqual(["HR_HEAD"]);
+    expect(requisitionChain(false, "MANAGER")).toEqual(["HR_HEAD"]);
   });
 
   it("goes on to the Super Admin above it", () => {
-    expect(requisitionChain(true)).toEqual(["HR_HEAD", "SUPER_ADMIN"]);
+    expect(requisitionChain(true, "MANAGER")).toEqual(["HR_HEAD", "SUPER_ADMIN"]);
+  });
+
+  it("never sends the HR Head's own requisition to the HR Head", () => {
+    // Below the threshold it would otherwise be final on their own say-so.
+    expect(requisitionChain(false, "HR_HEAD")).toEqual(["SUPER_ADMIN"]);
+    expect(requisitionChain(true, "HR_HEAD")).toEqual(["SUPER_ADMIN"]);
   });
 });

@@ -11,6 +11,9 @@ import { requisitionLabel } from "./requisitions";
  * "Raised by a manager or HR → HR Head → Super Admin, but only if it is above
  * the value FCSL sets. Below that value the HR Head's approval is final."
  *
+ * Since 10 September 2026 only managers, department heads and the HR Head
+ * raise one, and the HR Head's own goes straight to the Super Admin.
+ *
  * Same shape as the leave chain and for the same reason: the rule lives in a
  * library that takes an explicit actor, so the HR Head's inbox and the Super
  * Admin's call one implementation and a test can call exactly what they call.
@@ -31,7 +34,7 @@ export async function decideRequisition(
     where: { id: requisitionId },
     include: {
       approvals: { orderBy: { step: "asc" } },
-      raisedBy: { include: { user: { select: { id: true } } } },
+      raisedBy: { include: { user: { select: { id: true, role: true } } } },
     },
   });
   if (!requisition) return { error: "Not found." };
@@ -52,7 +55,14 @@ export async function decideRequisition(
             ?.value ?? 50000,
         );
   const amount = requisition.amount ? Number(requisition.amount) : null;
-  const chain = requisitionChain(amount !== null && amount > threshold);
+  // ponytail: the raiser's role as it is NOW, not as it was when raised. A
+  // manager promoted to HR Head while their own requisition waits would find
+  // it re-routed. Freeze it on the row, as the threshold is, if that ever
+  // happens rather than being imagined.
+  const chain = requisitionChain(
+    amount !== null && amount > threshold,
+    requisition.raisedBy.user.role,
+  );
 
   // One step at a time, in order — the same rule as leave.
   if (chain[requisition.currentStep] !== actor.role) {
