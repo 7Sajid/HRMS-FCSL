@@ -7,8 +7,8 @@ import { currentIp, getSessionContext } from "@/lib/auth";
 import { actorFrom, record } from "@/lib/audit";
 import { notify } from "@/lib/notifications";
 import { can } from "@/lib/permissions";
-import { fromISODate } from "@/lib/dates";
-import { leaveYearBounds } from "@/lib/leave";
+import { formatDate, fromISODate, todayInDhaka } from "@/lib/dates";
+import { grantWindow, leaveYearOf } from "@/lib/leave";
 
 export type SetupResult = { ok: true } | { error: string };
 
@@ -303,7 +303,6 @@ export async function resolveCorrection(
 export async function adjustLeaveBalance(
   employeeId: string,
   leaveTypeId: string,
-  year: number,
   days: number,
   reason: string,
 ): Promise<SetupResult> {
@@ -321,12 +320,24 @@ export async function adjustLeaveBalance(
   if (Math.round(days * 2) !== days * 2) return { error: "Days go in halves — 1, 1.5, 2." };
 
   const [employee, leaveType] = await Promise.all([
-    prisma.employee.findUnique({ where: { id: employeeId }, select: { id: true, fullName: true } }),
-    prisma.leaveType.findUnique({ where: { id: leaveTypeId }, select: { id: true, name: true } }),
+    prisma.employee.findUnique({
+      where: { id: employeeId },
+      select: { id: true, fullName: true, joiningDate: true, confirmationDate: true },
+    }),
+    prisma.leaveType.findUnique({
+      where: { id: leaveTypeId },
+      select: { id: true, name: true, probation: true },
+    }),
   ]);
   if (!employee || !leaveType) return { error: "Not found." };
 
-  const { from, to } = leaveYearBounds(year);
+  // Into the leave year they are in today, and into the same window as that
+  // year's grant — so a day added to casual leave during probation sits beside
+  // the advance it corrects rather than in a year of its own.
+  const period = leaveYearOf(employee.joiningDate, todayInDhaka());
+  const { from, to } =
+    grantWindow(leaveType.probation, employee.joiningDate, employee.confirmationDate, period) ?? period;
+  const periodLabel = `${formatDate(period.from)} – ${formatDate(period.to)}`;
   const actorName = context.employee?.fullName ?? context.user.email;
   const ip = await currentIp();
 
@@ -350,7 +361,7 @@ export async function adjustLeaveBalance(
       targetType: "employee",
       targetId: employeeId,
       targetLabel: `${employee.fullName} — ${leaveType.name}`,
-      detail: { year, days, reason: written },
+      detail: { leaveYear: periodLabel, days, reason: written },
       ip,
       tx,
     });
@@ -361,7 +372,7 @@ export async function adjustLeaveBalance(
           select: { userId: true },
         })).userId,
         title: `Your ${leaveType.name.toLowerCase()} balance has changed`,
-        body: `${days > 0 ? "+" : ""}${days} day${Math.abs(days) === 1 ? "" : "s"} for ${year}. ${written}`,
+        body: `${days > 0 ? "+" : ""}${days} day${Math.abs(days) === 1 ? "" : "s"} for the leave year ${periodLabel}. ${written}`,
         link: "/me/leave",
       },
       tx,

@@ -6,6 +6,7 @@ import { applyForLeave } from "@/app/actions/leave";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select, Textarea } from "@/components/ui/Field";
 import { ErrorBox, NoticeBox } from "@/components/ui/Feedback";
+import { formatDate } from "@/lib/dates";
 
 export type TypeOption = {
   id: string;
@@ -16,6 +17,8 @@ export type TypeOption = {
   attachmentRequiredAfterDays: number | null;
   /** Leave without pay: no entitlement, and none is expected. */
   uncounted: boolean;
+  /** "2027-06-01" — the day it opens, when that is still to come (earned leave in probation). */
+  availableFrom: string | null;
 };
 
 /**
@@ -79,7 +82,9 @@ export function ApplyForLeave({
 
   const type = types.find((t) => t.id === typeId);
   const late = Boolean(from && from < today);
-  const overBalance = Boolean(type && !type.uncounted && cost && cost.working > type.applicable);
+  const overBalance = Boolean(
+    type && !type.uncounted && !type.availableFrom && cost && cost.working > type.applicable,
+  );
   const needsCertificate = Boolean(
     type?.attachmentRequiredAfterDays !== null &&
       type?.attachmentRequiredAfterDays !== undefined &&
@@ -100,7 +105,11 @@ export function ApplyForLeave({
           {types.map((t) => (
             <option key={t.id} value={t.id}>
               {t.name}
-              {t.uncounted ? "" : ` — ${t.applicable} day${t.applicable === 1 ? "" : "s"} left`}
+              {t.availableFrom
+                ? " — opens after probation"
+                : t.uncounted
+                  ? ""
+                  : ` — ${t.applicable} day${t.applicable === 1 ? "" : "s"} left`}
             </option>
           ))}
         </Select>
@@ -115,6 +124,15 @@ export function ApplyForLeave({
         </Field>
       </div>
 
+      {type?.availableFrom && (
+        // The server refuses it with the same date; saying so before anybody
+        // fills in the rest of the form is the courtesy.
+        <NoticeBox tone="warn">
+          {type.name} opens on {formatDate(new Date(`${type.availableFrom}T00:00:00Z`))}, when your
+          probation ends. It cannot be applied for before then.
+        </NoticeBox>
+      )}
+
       {cost && (
         <NoticeBox tone={overBalance ? "warn" : "brand"}>
           <p>
@@ -124,7 +142,7 @@ export function ApplyForLeave({
             </strong>{" "}
             Fridays, Saturdays and public holidays are not counted.
           </p>
-          {type && !type.uncounted && (
+          {type && !type.uncounted && !type.availableFrom && (
             <p className="mt-1">
               You have {type.applicable} day{type.applicable === 1 ? "" : "s"} of {type.name.toLowerCase()} left
               {type.pending > 0 ? ` (${type.pending} already applied for and waiting)` : ""}.

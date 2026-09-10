@@ -50,25 +50,31 @@ async function main() {
       userId: user.id,
       fullName: "QA Leave Applicant",
       onboardingStatus: "APPROVED",
-      // Joined at the start of the year, so entitlement is not pro-rated and
-      // the numbers below are the full Labour Act figures.
+      // Joined 1 January 2026, so on probation until 1 January 2027: casual
+      // leave is the advance FCSL described — 6 days, usable now, out of the
+      // first permanent year.
       joiningDate: calendarDate(2026, 1, 1),
     },
   });
 
   try {
     console.log("\nEntitlements are granted lazily and only once");
-    await ensureEntitlements(employee, 2026);
+    await ensureEntitlements(employee, calendarDate(2026, 6, 1));
     const first = await prisma.leaveEntitlement.count({ where: { employeeId: employee.id } });
-    await ensureEntitlements(employee, 2026);
+    await ensureEntitlements(employee, calendarDate(2026, 6, 1));
     const second = await prisma.leaveEntitlement.count({ where: { employeeId: employee.id } });
     check("running it twice grants nothing extra", first === second && first > 0, `${first} then ${second}`);
 
-    const types = await leaveTypesFor(employee, 2026);
+    const types = await leaveTypesFor(employee, calendarDate(2026, 6, 1));
     const casual = types.find((t) => t.code === "CASUAL")!;
-    check("a full-year joiner gets the Labour Act figure", casual.balance.entitled === 10, String(casual.balance.entitled));
+    check("casual leave is FCSL's 6 days, available during probation", casual.balance.entitled === 6, String(casual.balance.entitled));
     check("nothing is taken yet", casual.balance.taken === 0);
-    check("all of it is applicable", casual.balance.applicable === 10);
+    const earned = types.find((t) => t.code === "EARNED")!;
+    check(
+      "earned leave is closed during probation, and says the day it opens",
+      earned.balance.entitled === 0 && earned.availableFrom?.getTime() === calendarDate(2027, 1, 1).getTime(),
+    );
+    check("all of it is applicable", casual.balance.applicable === 6);
 
     console.log("\nApplying materialises every calendar date");
     const days = planLeaveDays(calendarDate(2026, 9, 10), calendarDate(2026, 9, 13), new Set());
@@ -102,12 +108,12 @@ async function main() {
     check("it starts with the manager", request.currentApproverRole === "MANAGER");
 
     console.log("\nWhat a pending application does and does not do");
-    const afterApply = (await leaveTypesFor(employee, 2026)).find((t) => t.code === "CASUAL")!;
+    const afterApply = (await leaveTypesFor(employee, calendarDate(2026, 6, 1))).find((t) => t.code === "CASUAL")!;
     // §7.1 rule 3: "The days come off the balance at this moment and not
     // before" — that moment being the Super Admin's approval.
     check("nothing has come off the balance", afterApply.balance.taken === 0);
     check("but two days are reserved as pending", afterApply.balance.pending === 2, String(afterApply.balance.pending));
-    check("so only eight can be applied for", afterApply.balance.applicable === 8, String(afterApply.balance.applicable));
+    check("so only four can be applied for", afterApply.balance.applicable === 4, String(afterApply.balance.applicable));
 
     const junction = await prisma.leaveDayEntitlement.count({
       where: { leaveDay: { employeeId: employee.id } },
@@ -127,9 +133,9 @@ async function main() {
       where: { id: request.id },
       data: { status: "WITHDRAWN", currentApproverRole: null },
     });
-    const afterWithdraw = (await leaveTypesFor(employee, 2026)).find((t) => t.code === "CASUAL")!;
+    const afterWithdraw = (await leaveTypesFor(employee, calendarDate(2026, 6, 1))).find((t) => t.code === "CASUAL")!;
     check("the pending days are released", afterWithdraw.balance.pending === 0);
-    check("the full balance is applicable again", afterWithdraw.balance.applicable === 10);
+    check("the full balance is applicable again", afterWithdraw.balance.applicable === 6);
     const stillThere = await prisma.leaveDay.count({ where: { leaveRequestId: request.id } });
     check("the record of the application is kept", stillThere === 4, `${stillThere} day rows`);
 
@@ -153,12 +159,12 @@ async function main() {
     });
     qaTypeId = qaType.id;
 
-    await ensureEntitlements(employee, 2026);
-    const stillTen = (await leaveTypesFor(employee, 2026)).find((t) => t.code === qaTypeCode)!;
-    check("2026 still uses the 2026 rule", stillTen.balance.entitled === 10, String(stillTen.balance.entitled));
-    await ensureEntitlements(employee, 2027);
-    const nextYear = (await leaveTypesFor(employee, 2027)).find((t) => t.code === qaTypeCode)!;
-    check("2027 uses the new one", nextYear.balance.entitled === 15, String(nextYear.balance.entitled));
+    await ensureEntitlements(employee, calendarDate(2026, 6, 1));
+    const stillTen = (await leaveTypesFor(employee, calendarDate(2026, 6, 1))).find((t) => t.code === qaTypeCode)!;
+    check("the leave year from 1 January 2026 uses the rule in force then", stillTen.balance.entitled === 10, String(stillTen.balance.entitled));
+    await ensureEntitlements(employee, calendarDate(2027, 6, 1));
+    const nextYear = (await leaveTypesFor(employee, calendarDate(2027, 6, 1))).find((t) => t.code === qaTypeCode)!;
+    check("the next leave year uses the new one", nextYear.balance.entitled === 15, String(nextYear.balance.entitled));
   } finally {
     await prisma.employee.deleteMany({ where: { id: employee.id } });
     await prisma.user.deleteMany({ where: { id: user.id } });

@@ -101,6 +101,20 @@ export function addDays(date: Date, days: number): Date {
   return next;
 }
 
+/**
+ * The same calendar date `years` later, or earlier if negative.
+ *
+ * 29 February lands on 28 February in a year without one, rather than rolling
+ * into March the way Date would — a leave year that starts on somebody's
+ * joining anniversary must not start a day late every non-leap year.
+ */
+export function addYears(date: Date, years: number): Date {
+  const year = date.getUTCFullYear() + years;
+  const month = date.getUTCMonth();
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(year, month, Math.min(date.getUTCDate(), lastDay)));
+}
+
 /** Whole days from `from` to `to`. Negative if `to` is earlier. */
 export function daysBetween(from: Date, to: Date): number {
   return Math.round((to.getTime() - from.getTime()) / 86_400_000);

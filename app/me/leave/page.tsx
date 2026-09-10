@@ -1,11 +1,12 @@
 import { prisma } from "@/lib/db";
 import { requireEmployee } from "@/lib/auth";
-import { calendarDate, formatDate, formatMonth, toISODate, todayInDhaka } from "@/lib/dates";
+import { addDays, calendarDate, formatDate, formatMonth, toISODate, todayInDhaka } from "@/lib/dates";
 import { chainStart, waitingWith } from "@/lib/approval-chain";
 import { calendarForRange, ensureEntitlements, leaveTypesFor } from "@/lib/leave-service";
+import { leaveYearOf, probationEnds } from "@/lib/leave";
 import { documentLabel } from "@/lib/documents";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
-import { Badge } from "@/components/ui/Feedback";
+import { Badge, NoticeBox } from "@/components/ui/Feedback";
 import { TableShell, Tbody, Td, Th, Thead, TableEmpty } from "@/components/ui/Table";
 import { ApplyForLeave } from "@/components/leave/ApplyForLeave";
 import { WithdrawButton } from "@/components/leave/WithdrawButton";
@@ -22,10 +23,10 @@ export default async function Page() {
   const today = todayInDhaka();
   const year = today.getUTCFullYear();
 
-  await ensureEntitlements(employee, year);
+  await ensureEntitlements(employee, today);
 
   const [types, calendar, requests, sheet, attachments] = await Promise.all([
-    leaveTypesFor(employee, year),
+    leaveTypesFor(employee, today),
     // This year AND next: the preview on this screen has to be able to price a
     // week off over Christmas, which is two leave years. The server checks it
     // again over the exact range the person picked.
@@ -66,18 +67,43 @@ export default async function Page() {
     .replace("Waiting with ", "")
     .replace("your manager", "your manager");
 
+  const leaveYear = leaveYearOf(employee.joiningDate, today);
+  const probationEnd = probationEnds(employee.joiningDate, employee.confirmationDate);
+  const onProbation = probationEnd !== null && today < probationEnd;
+  const early = types.filter((t) => t.probation === "ADVANCE").map((t) => t.name.toLowerCase());
+  const later = types.filter((t) => t.availableFrom).map((t) => t.name.toLowerCase());
+
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <PageHeader
         title="Leave & attendance"
-        subtitle={`Your ${year} balances, everything you have applied for, and this month's attendance.`}
+        subtitle={`Your balances for the leave year ${formatDate(leaveYear.from)} – ${formatDate(leaveYear.to)}, everything you have applied for, and this month's attendance.`}
       />
+
+      {onProbation && probationEnd && (
+        // FCSL, 10 September 2026. Said where the numbers are, so nobody finds
+        // out in their first permanent year that the days are already gone.
+        <div className="mb-6">
+          <NoticeBox tone="brand">
+            You are on probation until {formatDate(addDays(probationEnd, -1))}.
+            {early.length > 0 &&
+              ` You can take ${joinNames(early)} now, but those days come out of your first year as a permanent employee.`}
+            {later.length > 0 && ` ${capitalise(joinNames(later))} opens on ${formatDate(probationEnd)}.`}
+          </NoticeBox>
+        </div>
+      )}
 
       <section className="mb-8 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {types.map((type) => (
           <Card key={type.id} className="p-4">
             <p className="text-xs font-medium uppercase tracking-wide text-ink-400">{type.name}</p>
-            {type.uncounted ? (
+            {type.availableFrom ? (
+              // Earned leave during probation: not used up, not open yet.
+              <>
+                <p className="mt-1 text-2xl font-bold text-ink-400">&mdash;</p>
+                <p className="text-xs text-ink-500">Opens {formatDate(type.availableFrom)}</p>
+              </>
+            ) : type.uncounted ? (
               // No entitlement by definition, so there is no number to show.
               // It used to read "-1" the moment somebody applied for a day.
               <>
@@ -111,6 +137,7 @@ export default async function Page() {
                 available: t.balance.available,
                 pending: t.balance.pending,
                 uncounted: t.uncounted,
+                availableFrom: t.availableFrom ? toISODate(t.availableFrom) : null,
                 attachmentRequiredAfterDays: t.attachmentRequiredAfterDays,
               }))}
               goesTo={goesTo === "Finished" ? "nobody — it is recorded directly" : goesTo}
@@ -246,3 +273,13 @@ const MARK_TONE: Record<string, string> = {
   WEEKLY_OFF: "bg-surface text-ink-400",
   OFFICIAL_DUTY: "bg-brand-50 text-brand-500",
 };
+
+/** "casual leave and sick leave" */
+function joinNames(names: string[]): string {
+  if (names.length <= 1) return names[0] ?? "";
+  return `${names.slice(0, -1).join(", ")} and ${names.at(-1)}`;
+}
+
+function capitalise(text: string): string {
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}

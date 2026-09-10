@@ -134,7 +134,7 @@ export type LeaveReport = {
   tookNoneTotal: number;
 };
 
-export async function leaveReport(year: number): Promise<LeaveReport> {
+export async function leaveReport(year: number, today: Date = todayInDhaka()): Promise<LeaveReport> {
   const from = new Date(Date.UTC(year, 0, 1));
   const to = new Date(Date.UTC(year, 11, 31));
   const granted = {
@@ -181,8 +181,10 @@ export async function leaveReport(year: number): Promise<LeaveReport> {
     // not a question that can be answered from a sample.
     prisma.leaveEntitlement.findMany({
       where: {
-        fromDate: { lte: to },
-        toDate: { gte: from },
+        // Buckets in force today. Leave years start on each person's own date,
+        // so "this calendar year's entitlement" is no longer a thing to ask for.
+        fromDate: { lte: today },
+        toDate: { gte: today },
         employee: { status: "ACTIVE", onboardingStatus: "APPROVED" },
       },
       select: {

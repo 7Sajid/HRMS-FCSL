@@ -64,9 +64,9 @@ export default async function Page({ params }: Props) {
     // Granted before it is read, as the person's own leave page does — a
     // manager should not see "0 of 0" for somebody who simply has not opened
     // their own screen yet.
-    const year = todayInDhaka().getUTCFullYear();
-    await ensureEntitlements(member, year);
-    balances.push(...(await leaveTypesFor(member, year)));
+    const onDate = todayInDhaka();
+    await ensureEntitlements(member, onDate);
+    balances.push(...(await leaveTypesFor(member, onDate)));
   }
 
   const shown = period ?? member;

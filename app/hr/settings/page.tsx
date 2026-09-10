@@ -7,6 +7,7 @@ import { Badge, NoticeBox } from "@/components/ui/Feedback";
 import {
   HolidayForm,
   LeaveAudienceForm,
+  LeaveProbationForm,
   LeaveRuleForm,
   NewLeaveTypeForm,
   OrgListForm,
@@ -84,8 +85,9 @@ export default async function Page() {
             {/* §6.2 / §12.2 — the reason rules are added rather than edited. */}
             A change is a <strong className="font-medium">new dated rule</strong>, never an edit.
             Last year&rsquo;s leave keeps being calculated on last year&rsquo;s rule, so old records
-            do not silently change meaning. These shipped pre-filled with the Bangladesh Labour Act
-            2006 minimums; raise or rename them as FCSL wishes.
+            do not silently change meaning. These are FCSL&rsquo;s figures as decided on 10 September
+            2026; change or rename them as FCSL wishes. &ldquo;During probation&rdquo; decides whether a
+            type can be taken in somebody&rsquo;s first year.
           </NoticeBox>
         </div>
 
@@ -113,8 +115,9 @@ export default async function Page() {
                   )}
                 </div>
 
-                <div className="mb-3">
+                <div className="mb-3 flex flex-wrap gap-x-6 gap-y-2">
                   <LeaveAudienceForm leaveTypeId={type.id} current={type.appliesTo} />
+                  <LeaveProbationForm leaveTypeId={type.id} current={type.probation} />
                 </div>
 
                 <LeaveRuleForm

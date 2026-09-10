@@ -62,7 +62,7 @@ export async function LeaveInbox({
   const balances = new Map<string, number | null>();
   const byEmployee = await leaveTypesForMany(
     requests.map((request) => request.employee),
-    today.getUTCFullYear(),
+    today,
   );
   for (const [employeeId, types] of byEmployee) {
     for (const type of types) {

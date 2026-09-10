@@ -85,8 +85,8 @@ async function main() {
   const staff = await person("QA Staff", "EMPLOYEE", boss.employee.id);
 
   try {
-    await ensureEntitlements(staff.employee, 2026);
-    const casual = (await leaveTypesFor(staff.employee, 2026)).find((t) => t.code === "CASUAL")!;
+    await ensureEntitlements(staff.employee, calendarDate(2026, 6, 1));
+    const casual = (await leaveTypesFor(staff.employee, calendarDate(2026, 6, 1))).find((t) => t.code === "CASUAL")!;
 
     const apply = async () => {
       const days = planLeaveDays(calendarDate(2026, 10, 5), calendarDate(2026, 10, 7), new Set());
@@ -169,7 +169,7 @@ async function main() {
       })) === 1,
     );
 
-    const afterDenial = (await leaveTypesFor(staff.employee, 2026)).find((t) => t.code === "CASUAL")!;
+    const afterDenial = (await leaveTypesFor(staff.employee, calendarDate(2026, 6, 1))).find((t) => t.code === "CASUAL")!;
     check("nothing came off the balance", afterDenial.balance.taken === 0);
     check("and nothing stays reserved", afterDenial.balance.pending === 0);
 
@@ -225,10 +225,12 @@ async function main() {
     row = await prisma.leaveRequest.findUnique({ where: { id: travelling.id } });
     check("the application is granted", row?.status === "GRANTED");
 
-    const finalBalance = (await leaveTypesFor(staff.employee, 2026)).find((t) => t.code === "CASUAL")!;
+    const finalBalance = (await leaveTypesFor(staff.employee, calendarDate(2026, 6, 1))).find((t) => t.code === "CASUAL")!;
     check("three days have come off the balance", finalBalance.balance.taken === 3, String(finalBalance.balance.taken));
     check("and nothing is left pending", finalBalance.balance.pending === 0);
-    check("seven remain of ten", finalBalance.balance.available === 7, String(finalBalance.balance.available));
+    // Staff joined 1 January 2026 and are on probation: casual leave is FCSL's
+    // 6-day advance, out of their first permanent year.
+    check("three remain of six", finalBalance.balance.available === 3, String(finalBalance.balance.available));
 
     const allocations = await prisma.leaveDayEntitlement.findMany({
       where: { leaveDay: { leaveRequestId: travelling.id } },

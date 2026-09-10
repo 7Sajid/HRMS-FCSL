@@ -408,13 +408,16 @@ async function main() {
     madeLeaveTypes.push(leaveType.id);
 
     const withEmployee = await prisma.employee.findUniqueOrThrow({ where: { id: rm.employee.id } });
-    await ensureEntitlements(withEmployee, year);
-    const types = await leaveTypesFor(withEmployee, year);
+    await ensureEntitlements(withEmployee, today);
+    const types = await leaveTypesFor(withEmployee, today);
     const mine = types.find((t) => t.code === leaveType.code)!;
+    // Leave years run from the joining date (FCSL, 10 September 2026), so a
+    // September joiner's first year starts in September with the whole year's
+    // days — there is no January left to pro-rate from.
     check(
-      `a September joiner is pro-rated, not given the full year — ${mine.balance.entitled} of 12`,
-      mine.balance.entitled < 12 && mine.balance.entitled > 0,
-      String(mine.balance.entitled),
+      `a September joiner's leave year starts on their joining date — ${mine.balance.entitled} of 12`,
+      mine.balance.entitled === 12 && mine.period.from.getTime() === calendarDate(year, 9, 1).getTime(),
+      `${mine.balance.entitled} from ${toISODate(mine.period.from)}`,
     );
 
     // Four calendar days spanning a Friday and Saturday.
@@ -437,7 +440,7 @@ async function main() {
       to: addDays(thursday, 3),
       today,
       days: planned,
-      balances: [{ year: today.getUTCFullYear(), balance: mine.balance }],
+      balances: [{ period: mine.period, balance: mine.balance }],
       overBalance: "REFUSE",
       lateReason: "",
       overlappingDates: await bookedDates(rm.employee.id),
@@ -455,7 +458,7 @@ async function main() {
       to: addDays(thursday, 60),
       today,
       days: planLeaveDays(thursday, addDays(thursday, 60), holidays, new Set(), [5, 6]),
-      balances: [{ year: today.getUTCFullYear(), balance: mine.balance }],
+      balances: [{ period: mine.period, balance: mine.balance }],
       overBalance: "REFUSE",
       lateReason: "",
       overlappingDates: new Set(),
@@ -473,7 +476,7 @@ async function main() {
       to: addDays(today, -4),
       today,
       days: planLeaveDays(addDays(today, -5), addDays(today, -4), holidays, new Set(), [5, 6]),
-      balances: [{ year: today.getUTCFullYear(), balance: mine.balance }],
+      balances: [{ period: mine.period, balance: mine.balance }],
       overBalance: "REFUSE",
       lateReason: "",
       overlappingDates: new Set(),

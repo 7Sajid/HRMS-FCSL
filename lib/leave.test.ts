@@ -1,15 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { calendarDate, toISODate } from "./dates";
+import { addYears, calendarDate, toISODate } from "./dates";
 import {
   allocateFifo,
   audienceIncludes,
   carriedForwardDays,
   computeBalance,
   DEFAULT_MAXIMUM_LEAVE_DAYS,
+  grantWindow,
   isUncounted,
+  leaveYearOf,
+  leaveYearsSpanned,
+  mergeSharedBalances,
   planLeaveDays,
   preflight,
-  proRatedDays,
+  probationEnds,
+  ruleForPeriod,
   ruleOn,
   weeklyOffOn,
   workingDayCost,
@@ -86,30 +91,127 @@ describe("dated rules keep old records meaning what they meant", () => {
   });
 });
 
-describe("a joiner's first year is pro-rated", () => {
-  it("gives a full year to somebody who was already here", () => {
-    expect(proRatedDays(10, d(2020, 3, 1), 2026)).toBe(10);
+describe("each person's leave year runs from their joining date (FCSL, 10 Sep 2026)", () => {
+  it("runs from the joining date to the day before the anniversary", () => {
+    expect(leaveYearOf(d(2026, 6, 1), d(2026, 9, 10))).toEqual({ from: d(2026, 6, 1), to: d(2027, 5, 31) });
   });
 
-  it("gives a January joiner the full year", () => {
-    expect(proRatedDays(12, d(2026, 1, 15), 2026)).toBe(12);
+  it("starts the next year on the anniversary itself", () => {
+    expect(leaveYearOf(d(2026, 6, 1), d(2027, 6, 1))).toEqual({ from: d(2027, 6, 1), to: d(2028, 5, 31) });
+    expect(leaveYearOf(d(2026, 6, 1), d(2027, 5, 31))).toEqual({ from: d(2026, 6, 1), to: d(2027, 5, 31) });
   });
 
-  it("gives a July joiner half", () => {
-    expect(proRatedDays(12, d(2026, 7, 1), 2026)).toBe(6);
+  it("keeps a 29 February joiner's years back to back", () => {
+    expect(addYears(d(2024, 2, 29), 1)).toEqual(d(2025, 2, 28));
+    expect(leaveYearOf(d(2024, 2, 29), d(2024, 12, 1)).to).toEqual(d(2025, 2, 27));
+    expect(leaveYearOf(d(2024, 2, 29), d(2025, 3, 1)).from).toEqual(d(2025, 2, 28));
+    expect(leaveYearOf(d(2024, 2, 29), d(2028, 3, 1)).from).toEqual(d(2028, 2, 29));
   });
 
-  it("gives a December joiner one month's worth, not a whole year", () => {
-    expect(proRatedDays(12, d(2026, 12, 20), 2026)).toBe(1);
+  it("falls back to the calendar year for somebody with no joining date", () => {
+    expect(leaveYearOf(null, d(2026, 9, 10))).toEqual({ from: d(2026, 1, 1), to: d(2026, 12, 31) });
   });
 
-  it("rounds to the nearest half day, because leave is taken in half days", () => {
-    expect(proRatedDays(10, d(2026, 8, 1), 2026)).toBe(4);
-    expect(proRatedDays(14, d(2026, 6, 1), 2026)).toBe(8);
+  it("names both years an application across the anniversary touches", () => {
+    expect(leaveYearsSpanned(d(2026, 6, 1), d(2027, 5, 27), d(2027, 6, 3))).toEqual([
+      { from: d(2026, 6, 1), to: d(2027, 5, 31) },
+      { from: d(2027, 6, 1), to: d(2028, 5, 31) },
+    ]);
+    expect(leaveYearsSpanned(d(2026, 6, 1), d(2026, 9, 7), d(2026, 9, 9))).toHaveLength(1);
+  });
+});
+
+describe("probation (FCSL, 10 Sep 2026)", () => {
+  const joined = d(2026, 6, 1);
+  const year0 = leaveYearOf(joined, d(2026, 9, 1));
+  const year1 = leaveYearOf(joined, d(2027, 9, 1));
+  const year2 = leaveYearOf(joined, d(2028, 9, 1));
+
+  it("ends a year after joining, unless HR recorded a confirmation date", () => {
+    expect(probationEnds(joined, null)).toEqual(d(2027, 6, 1));
+    expect(probationEnds(joined, d(2026, 12, 1))).toEqual(d(2026, 12, 1));
+    expect(probationEnds(null, null)).toBeNull();
   });
 
-  it("gives nothing for a year before they joined", () => {
-    expect(proRatedDays(10, d(2027, 1, 1), 2026)).toBe(0);
+  it("gives casual and sick leave ONE bucket covering probation and the first permanent year", () => {
+    const expected = { from: joined, to: d(2028, 5, 31), rulePeriod: year1 };
+    expect(grantWindow("ADVANCE", joined, null, year0)).toEqual(expected);
+    expect(grantWindow("ADVANCE", joined, null, year1)).toEqual(expected);
+    // "Next year I'll have all 6, 6."
+    expect(grantWindow("ADVANCE", joined, null, year2)).toEqual({ ...year2, rulePeriod: year2 });
+  });
+
+  it("works FCSL's own example through the arithmetic that already existed", () => {
+    // 3 days of casual leave taken in probation...
+    const window = grantWindow("ADVANCE", joined, null, year0)!;
+    const casual = { id: "casual", fromDate: window.from, toDate: window.to, days: 6, alreadyUsed: 0 };
+    const { allocations, shortfall } = allocateFifo(
+      [casual],
+      planLeaveDays(d(2026, 9, 7), d(2026, 9, 9), new Set()),
+    );
+    expect(shortfall).toBe(0);
+    const used = allocations.reduce((total, a) => total + a.lengthDays, 0);
+    expect(used).toBe(3);
+    // ...leaves "only 3 casual leave" in the first permanent year: same bucket.
+    expect(computeBalance([casual], used, 0).available).toBe(3);
+  });
+
+  it("keeps earned leave closed until probation ends", () => {
+    expect(grantWindow("AFTER_PROBATION", joined, null, year0)).toBeNull();
+    expect(grantWindow("AFTER_PROBATION", joined, null, year1)).toEqual({ ...year1, rulePeriod: year1 });
+    // Confirmed early, it opens on the confirmation date and not a day before.
+    expect(grantWindow("AFTER_PROBATION", joined, d(2026, 12, 1), year0)).toEqual({
+      from: d(2026, 12, 1),
+      to: year0.to,
+      rulePeriod: year0,
+    });
+  });
+
+  it("treats an advance for somebody confirmed early as that year's ordinary grant", () => {
+    expect(grantWindow("ADVANCE", joined, d(2026, 12, 1), year0)).toEqual({ ...year0, rulePeriod: year0 });
+  });
+
+  it("gives an ordinary type its own year from the first day", () => {
+    expect(grantWindow("NORMAL", joined, null, year0)).toEqual({ ...year0, rulePeriod: year0 });
+  });
+
+  it("grants nothing for a year that ended before they joined", () => {
+    expect(grantWindow("NORMAL", joined, null, leaveYearOf(joined, d(2025, 9, 1)))).toBeNull();
+  });
+
+  it("checks probation and the first permanent year as one when they share a bucket", () => {
+    const none = computeBalance([], 0, 0);
+    const merged = mergeSharedBalances([
+      { period: year0, bucketIds: ["advance"], balance: none },
+      { period: year1, bucketIds: ["advance"], balance: none },
+    ]);
+    expect(merged).toHaveLength(1);
+    expect(merged[0]!.period).toEqual({ from: year0.from, to: year1.to });
+
+    expect(
+      mergeSharedBalances([
+        { period: year1, bucketIds: ["a"], balance: none },
+        { period: year2, bucketIds: ["b"], balance: none },
+      ]),
+    ).toHaveLength(2);
+  });
+});
+
+describe("a leave year's rule", () => {
+  const rules = [
+    { effectiveFrom: d(2000, 1, 1), daysPerYear: 6 },
+    { effectiveFrom: d(2027, 1, 1), daysPerYear: 8 },
+  ];
+
+  it("is the one in force on the year's first day, so a change waits for each anniversary", () => {
+    expect(ruleForPeriod(rules, { from: d(2026, 6, 1), to: d(2027, 5, 31) })?.daysPerYear).toBe(6);
+    expect(ruleForPeriod(rules, { from: d(2027, 6, 1), to: d(2028, 5, 31) })?.daysPerYear).toBe(8);
+  });
+
+  it("is a new type's first rule when the type was created part-way through the year", () => {
+    const created = [{ effectiveFrom: d(2026, 9, 1), daysPerYear: 3 }];
+    expect(ruleForPeriod(created, { from: d(2026, 6, 1), to: d(2027, 5, 31) })?.daysPerYear).toBe(3);
+    expect(ruleForPeriod(created, { from: d(2025, 6, 1), to: d(2026, 5, 31) })).toBeNull();
   });
 });
 
@@ -204,7 +306,7 @@ describe("§6.2 — what the system checks before accepting an application", () 
     today: d(2026, 9, 1),
     balances: [
       {
-        year: 2026,
+        period: { from: d(2026, 1, 1), to: d(2026, 12, 31) },
         balance: computeBalance(
           [{ id: "a", fromDate: d(2026, 1, 1), toDate: d(2026, 12, 31), days: 10 }],
           0,
@@ -253,7 +355,7 @@ describe("§6.2 — what the system checks before accepting an application", () 
       ...forDates(d(2026, 9, 7), d(2026, 9, 11)),
       balances: [
         {
-          year: 2026,
+          period: { from: d(2026, 1, 1), to: d(2026, 12, 31) },
           balance: computeBalance(
             [{ id: "a", fromDate: d(2026, 1, 1), toDate: d(2026, 12, 31), days: 10 }],
             0,
@@ -340,7 +442,7 @@ describe("§6.2 — what the system checks before accepting an application", () 
 describe("a type with no entitlement is not a balance (§6.2)", () => {
   const unpaid = {
     today: d(2026, 9, 1),
-    balances: [{ year: 2026, balance: computeBalance([], 0, 0) }],
+    balances: [{ period: { from: d(2026, 1, 1), to: d(2026, 12, 31) }, balance: computeBalance([], 0, 0) }],
     overBalance: "WARN" as const,
     lateReason: "",
     overlappingDates: new Set<string>(),
@@ -427,7 +529,7 @@ describe("who a leave type is offered to (§6.2)", () => {
   });
 });
 
-describe("§6.2 — leave that crosses New Year", () => {
+describe("§6.2 — leave that crosses into another leave year", () => {
   it("knows both years a Christmas week touches", () => {
     expect(yearsSpanned(d(2026, 12, 28), d(2027, 1, 4))).toEqual([2026, 2027]);
     expect(yearsSpanned(d(2026, 9, 7), d(2026, 9, 11))).toEqual([2026]);
@@ -447,8 +549,8 @@ describe("§6.2 — leave that crosses New Year", () => {
       today: d(2026, 12, 1),
       days: planLeaveDays(from, to, new Set()),
       balances: [
-        { year: 2026, balance: full(2026, 0) },
-        { year: 2027, balance: full(2027, 10) },
+        { period: { from: d(2026, 1, 1), to: d(2026, 12, 31) }, balance: full(2026, 0) },
+        { period: { from: d(2027, 1, 1), to: d(2027, 12, 31) }, balance: full(2027, 10) },
       ],
       overBalance: "REFUSE",
       lateReason: "",
@@ -461,8 +563,8 @@ describe("§6.2 — leave that crosses New Year", () => {
       teamSize: 5,
     });
     expect(result.ok).toBe(false);
-    expect(result.errors.some((e) => /in 2026/.test(e))).toBe(true);
-    expect(result.errors.some((e) => /in 2027/.test(e))).toBe(false);
+    expect(result.errors.some((e) => /in the leave year from 01 Jan 2026/.test(e))).toBe(true);
+    expect(result.errors.some((e) => /in the leave year from 01 Jan 2027/.test(e))).toBe(false);
   });
 
   it("says nothing about the year when there is only one", () => {
@@ -475,7 +577,7 @@ describe("§6.2 — leave that crosses New Year", () => {
       days: planLeaveDays(from, to, new Set()),
       balances: [
         {
-          year: 2026,
+          period: { from: d(2026, 1, 1), to: d(2026, 12, 31) },
           balance: computeBalance(
             [{ id: "a", fromDate: d(2026, 1, 1), toDate: d(2026, 12, 31), days: 10 }],
             0,
@@ -496,7 +598,7 @@ describe("§6.2 — leave that crosses New Year", () => {
     expect(result.ok).toBe(false);
     // The ordinary message, unchanged by the year-by-year rewrite.
     expect(result.errors.some((e) => /more than the balance/.test(e))).toBe(true);
-    expect(result.errors.some((e) => / in 20\d\d /.test(e))).toBe(false);
+    expect(result.errors.some((e) => /in the leave year from/.test(e))).toBe(false);
   });
 });
 

@@ -1,5 +1,5 @@
 import type { LeaveDayKind } from "@prisma/client";
-import { calendarDate, dayKind, eachDate, formatDate, toISODate, type HolidaySet } from "./dates";
+import { addDays, addYears, calendarDate, dayKind, eachDate, formatDate, toISODate, type HolidaySet } from "./dates";
 
 /**
  * Leave arithmetic (§6.2).
@@ -18,15 +18,50 @@ import { calendarDate, dayKind, eachDate, formatDate, toISODate, type HolidaySet
 // ---------------------------------------------------------------------------
 // The leave year
 //
-// Calendar year. The specification does not name one, and the Labour Act's
-// entitlements are annual figures, so January to December is the reading that
-// needs no further assumption. If FCSL runs a July year this is the one place
-// it changes — and LeaveTypeRule is already dated so old records keep their
-// meaning.
+// Each person's leave year runs from their joining date: somebody who joined on
+// 1 June has a year from 1 June to 31 May. FCSL decided this on 10 September
+// 2026. It replaced a calendar year, which needed a pro-rating rule for every
+// joiner's first January; a year that starts when the person does needs none.
+//
+// Somebody with no joining date on record — never true of approved staff, but
+// the column is nullable — falls back to the calendar year rather than to no
+// year at all.
 // ---------------------------------------------------------------------------
 
-export function leaveYearBounds(year: number): { from: Date; to: Date } {
-  return { from: calendarDate(year, 1, 1), to: calendarDate(year, 12, 31) };
+export type LeavePeriod = { from: Date; to: Date };
+
+/** The leave year containing `date`, for somebody who joined on `joiningDate`. */
+export function leaveYearOf(joiningDate: Date | null, date: Date): LeavePeriod {
+  if (!joiningDate) {
+    const year = date.getUTCFullYear();
+    return { from: calendarDate(year, 1, 1), to: calendarDate(year, 12, 31) };
+  }
+  let years = date.getUTCFullYear() - joiningDate.getUTCFullYear();
+  if (addYears(joiningDate, years) > date) years -= 1;
+  // Both ends measured from the joining date, never from each other, so a
+  // 29 February joiner's years stay back to back through non-leap years.
+  return {
+    from: addYears(joiningDate, years),
+    to: addDays(addYears(joiningDate, years + 1), -1),
+  };
+}
+
+/**
+ * Every leave year a range of dates touches, in order.
+ *
+ * ponytail: stops after five. The longest application the HR Head allows is a
+ * year (`leave.maximumDays`), so a real one touches two; this only bounds the
+ * walk for a nonsense range that preflight is about to refuse anyway.
+ */
+export function leaveYearsSpanned(joiningDate: Date | null, from: Date, to: Date): LeavePeriod[] {
+  const periods: LeavePeriod[] = [];
+  let period = leaveYearOf(joiningDate, from);
+  while (periods.length < 5) {
+    periods.push(period);
+    if (period.to >= to) break;
+    period = leaveYearOf(joiningDate, addDays(period.to, 1));
+  }
+  return periods;
 }
 
 /**
@@ -65,22 +100,77 @@ export function yearsSpanned(from: Date, to: Date): number[] {
   return Array.from({ length: last - first + 1 }, (_, i) => first + i);
 }
 
+// ---------------------------------------------------------------------------
+// Probation
+//
+// FCSL, 10 September 2026: somebody in their first year can still take casual
+// and sick leave, but whatever they take comes out of the year they become
+// permanent. In their words — take 3 days of casual and 2 of sick in probation,
+// and "that year I will only have 3 casual leave ... and 4 sick leaves. Next
+// year I'll have all 6, 6."
+//
+// Which types behave that way is a setting on the type, not a list of codes
+// here: §12 puts leave types in the HR Head's hands.
+//
+//   NORMAL           its own grant every leave year, from the first day
+//   ADVANCE          one grant covers probation AND the first permanent year
+//   AFTER_PROBATION  nothing until probation ends (earned leave — Labour Act
+//                    s.117 gives it after a year's service)
+//
+// ADVANCE is nothing more than a bucket with a longer validity window: it opens
+// on the joining date and closes at the end of the first permanent year. FIFO,
+// the balance and consumption only ever ask "which buckets cover this date?",
+// so none of them had to learn a new rule — FCSL's example falls out of the
+// arithmetic they already did.
+// ---------------------------------------------------------------------------
+
+export type ProbationPolicy = "NORMAL" | "ADVANCE" | "AFTER_PROBATION";
+
 /**
- * A joiner's first year, pro-rated by the months they are actually employed.
- *
- * NOT stated in the specification — it is a policy question. Pro-rating is the
- * ordinary practice and the conservative direction: HR can always add days to
- * a bucket, and an adjustment is visible in the register, whereas a December
- * joiner silently holding a full year of casual leave is not.
+ * The first day as a permanent employee: the confirmation date HR recorded,
+ * otherwise a year after joining. Null for somebody with no joining date.
  */
-export function proRatedDays(annualDays: number, joiningDate: Date | null, year: number): number {
-  if (!annualDays) return 0;
-  if (!joiningDate || joiningDate.getUTCFullYear() < year) return annualDays;
-  if (joiningDate.getUTCFullYear() > year) return 0;
-  const monthsEmployed = 12 - joiningDate.getUTCMonth();
-  // To the nearest half day: leave is taken in half days, so a third of a day
-  // is a number nobody can act on.
-  return Math.round((annualDays * monthsEmployed) / 12 * 2) / 2;
+export function probationEnds(joiningDate: Date | null, confirmationDate: Date | null): Date | null {
+  if (!joiningDate) return null;
+  return confirmationDate ?? addYears(joiningDate, 1);
+}
+
+export type GrantWindow = LeavePeriod & {
+  /** The leave year whose rule sets how many days. */
+  rulePeriod: LeavePeriod;
+};
+
+/**
+ * Where the grant for `period` lives, or null if that period gets none.
+ *
+ * For an ADVANCE type every probation year and the first permanent year return
+ * the SAME window. That is what makes it one bucket rather than a debt carried
+ * from one bucket into the next.
+ */
+export function grantWindow(
+  policy: ProbationPolicy,
+  joiningDate: Date | null,
+  confirmationDate: Date | null,
+  period: LeavePeriod,
+): GrantWindow | null {
+  const own: GrantWindow = { ...period, rulePeriod: period };
+  if (!joiningDate) return own;
+  // Nothing for a year that ended before they arrived.
+  if (period.to < joiningDate) return null;
+
+  const ends = probationEnds(joiningDate, confirmationDate)!;
+  const firstPermanent = leaveYearOf(joiningDate, ends);
+  // Every year after the first permanent one is ordinary, whatever the type.
+  if (policy === "NORMAL" || period.from > firstPermanent.from) return own;
+
+  if (policy === "ADVANCE") {
+    return { from: joiningDate, to: firstPermanent.to, rulePeriod: firstPermanent };
+  }
+
+  // AFTER_PROBATION: nothing while the whole year is probation, and in the year
+  // probation ends, nothing before the day it ends.
+  if (period.to < ends) return null;
+  return { from: ends, to: period.to, rulePeriod: period };
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +193,28 @@ export function ruleOn<T>(rules: readonly DatedRule<T>[], onDate: Date): DatedRu
     }
   }
   return best;
+}
+
+/**
+ * The rule governing a whole leave year: the one in force on its first day.
+ *
+ * Leave years start on each person's own date, so "the rule for 2026" no longer
+ * means anything. Asked on the first day, a change dated next January reaches
+ * each person at their next anniversary instead of rewriting a year already
+ * half spent. The one exception is a type created during somebody's year: it
+ * has no rule on that year's first day, and its first rule is used rather than
+ * leaving them without the type until next time.
+ */
+export function ruleForPeriod<T>(rules: readonly DatedRule<T>[], period: LeavePeriod): DatedRule<T> | null {
+  const atStart = ruleOn(rules, period.from);
+  if (atStart) return atStart;
+  let first: DatedRule<T> | null = null;
+  for (const rule of rules) {
+    if (rule.effectiveFrom <= period.to && (!first || rule.effectiveFrom < first.effectiveFrom)) {
+      first = rule;
+    }
+  }
+  return first;
 }
 
 export function weeklyOffOn(
@@ -350,16 +462,49 @@ export function allocateFifo(
 // The five checks before an application is accepted (§6.2)
 // ---------------------------------------------------------------------------
 
+/**
+ * Fold together consecutive leave years that draw on exactly the same buckets.
+ *
+ * An ADVANCE type's probation year and first permanent year share one bucket.
+ * Checked separately, four days either side of the anniversary would each pass
+ * against the same six — eight days out of six. Merged, they are one window
+ * with one balance, which is what they are.
+ *
+ * ponytail: equality, not overlap. Two years sharing some buckets but not all
+ * (an HR adjustment made in only one of them) are still checked apart and
+ * could over-promise by the shared part. Consumption records the shortfall
+ * rather than inventing days, so the ceiling is a discrepancy, not a lie.
+ */
+export function mergeSharedBalances<T extends { period: LeavePeriod; bucketIds: readonly string[] }>(
+  entries: readonly T[],
+): T[] {
+  const merged: T[] = [];
+  for (const entry of entries) {
+    const last = merged.at(-1);
+    const same =
+      last !== undefined &&
+      entry.bucketIds.length > 0 &&
+      last.bucketIds.length === entry.bucketIds.length &&
+      entry.bucketIds.every((id) => last.bucketIds.includes(id));
+    if (same) merged[merged.length - 1] = { ...last, period: { from: last.period.from, to: entry.period.to } };
+    else merged.push(entry);
+  }
+  return merged;
+}
+
 export type PreflightInput = {
   from: Date;
   to: Date;
   today: Date;
   days: readonly PlannedDay[];
   /**
-   * This person's balance in each year the range touches, in order. One entry
-   * for the ordinary application; two for one that crosses New Year.
+   * This person's balance in each leave year the range touches, in order. One
+   * entry for the ordinary application; two for one that crosses their joining
+   * anniversary — unless both years draw on the same bucket, as probation and
+   * the first permanent year do, in which case the caller has merged them (see
+   * mergeSharedBalances) so the same days are not counted as available twice.
    */
-  balances: readonly { year: number; balance: Balance }[];
+  balances: readonly { period: LeavePeriod; balance: Balance }[];
   overBalance: "REFUSE" | "WARN";
   lateReason: string;
   /** Dates already covered by this person's other live applications. */
@@ -411,24 +556,25 @@ export function preflight(input: PreflightInput): Preflight {
 
   // 2 — Enough days of that type left, in each year the leave falls in?
   //
-  // Asked year by year, because an entitlement belongs to its year: days taken
-  // in January come out of January's allowance, not out of what was left of
-  // December's. An ordinary application has one year in this list and reads
-  // exactly as it always did.
+  // Asked leave year by leave year, because an entitlement belongs to its year:
+  // days taken after somebody's anniversary come out of the new year's
+  // allowance, not out of what was left of the old one. An ordinary
+  // application has one year in this list and reads exactly as it always did.
   //
   // Skipped entirely for a type that has no balance to be short of. It used to
   // fall through to the WARN branch and tell somebody applying for one day of
   // unpaid leave that they were "1 more than the balance", which reads as a
   // problem with their application rather than as the definition of the type.
   if (!input.uncounted) {
-    for (const { year, balance } of input.balances) {
+    for (const { period, balance } of input.balances) {
       const inThatYear = workingDayCost(
-        input.days.filter((day) => day.date.getUTCFullYear() === year),
+        input.days.filter((day) => day.date >= period.from && day.date <= period.to),
       );
       if (inThatYear <= balance.applicable) continue;
 
       const short = round(inThatYear - balance.applicable);
-      const named = input.balances.length > 1 ? ` in ${year}` : "";
+      const named =
+        input.balances.length > 1 ? ` in the leave year from ${formatDate(period.from)}` : "";
       const message =
         `This costs ${inThatYear} day${inThatYear === 1 ? "" : "s"}${named} and you have ${balance.applicable} left` +
         (balance.pending ? ` (${balance.pending} already applied for and waiting)` : "") +

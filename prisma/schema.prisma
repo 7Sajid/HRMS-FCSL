@@ -749,6 +749,9 @@ model LeaveType {
   /// type; the DAYS are what changes from year to year and must still compute
   /// on last year's rule.
   appliesTo LeaveAudience @default(ALL)
+  /// What this type does during somebody's probation (FCSL, 10 September
+  /// 2026) — see lib/leave.ts. A property of the type, like appliesTo.
+  probation ProbationLeave @default(NORMAL)
   /// Retired, never deleted — historic leave still points at it.
   retiredAt DateTime? @db.Timestamptz(3)
   sortOrder Int       @default(0)
@@ -758,6 +761,13 @@ model LeaveType {
   entitlements  LeaveEntitlement[]
   leaveRequests LeaveRequest[]
   leaveDays     LeaveDay[]
+}
+
+/// How a leave type behaves during probation. See `grantWindow` in lib/leave.ts.
+enum ProbationLeave {
+  NORMAL
+  ADVANCE
+  AFTER_PROBATION
 }
 
 /// What happens when an application exceeds the balance (§6.2, HR's choice).

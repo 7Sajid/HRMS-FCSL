@@ -11,6 +11,7 @@ import {
   saveOrgItem,
   saveSetting,
   setLeaveTypeAudience,
+  setLeaveTypeProbation,
 } from "@/app/actions/hr-settings";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
@@ -65,6 +66,62 @@ export function LeaveAudienceForm({
         {AUDIENCES.map((a) => (
           <option key={a.value} value={a.value}>
             {a.label}
+          </option>
+        ))}
+      </Select>
+      {error && <span className="text-xs text-red-600">{error}</span>}
+    </div>
+  );
+}
+
+const PROBATION = [
+  { value: "NORMAL", label: "Available from the first day" },
+  { value: "ADVANCE", label: "Can be taken early — comes out of the first permanent year" },
+  { value: "AFTER_PROBATION", label: "Only once probation ends" },
+] as const;
+
+type Probation = (typeof PROBATION)[number]["value"];
+
+/**
+ * What a leave type does during somebody's probation (FCSL, 10 September 2026).
+ * Grants already made keep the shape they were made with.
+ */
+export function LeaveProbationForm({
+  leaveTypeId,
+  current,
+}: {
+  leaveTypeId: string;
+  current: Probation;
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState("");
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label className="text-xs text-ink-500" htmlFor={`probation-${leaveTypeId}`}>
+        During probation
+      </label>
+      <Select
+        id={`probation-${leaveTypeId}`}
+        className="w-auto py-1.5 text-xs"
+        defaultValue={current}
+        disabled={pending}
+        onChange={(event) => {
+          const value = event.target.value as Probation;
+          start(async () => {
+            const result = await setLeaveTypeProbation(leaveTypeId, value);
+            if (result && "error" in result) setError(result.error);
+            else {
+              setError("");
+              router.refresh();
+            }
+          });
+        }}
+      >
+        {PROBATION.map((p) => (
+          <option key={p.value} value={p.value}>
+            {p.label}
           </option>
         ))}
       </Select>

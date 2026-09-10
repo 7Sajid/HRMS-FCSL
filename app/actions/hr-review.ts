@@ -403,9 +403,9 @@ export async function approveJoiner(
     return employeeIdValue;
   });
 
-  // Entitlement for the year they joined, so leave works from day one.
+  // Entitlement for their first leave year, so leave works from day one.
   const approved = await prisma.employee.findUnique({ where: { id: employeeId } });
-  if (approved) await ensureEntitlements(approved, todayInDhaka().getUTCFullYear());
+  if (approved) await ensureEntitlements(approved, todayInDhaka());
 
   await sendMail({
     to: employee.user.email,

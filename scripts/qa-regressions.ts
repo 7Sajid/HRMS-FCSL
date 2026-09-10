@@ -16,6 +16,7 @@ import {
   planLeaveDays,
   preflight,
   workingDayCost,
+  leaveYearsSpanned,
   yearsSpanned,
 } from "../lib/leave";
 import { decideRequisition } from "../lib/requisition-decide";
@@ -71,6 +72,8 @@ function check(label: string, condition: boolean, detail = "") {
  *  are gone: `LeaveRequest.leaveType` is onDelete: Restrict on purpose, so a
  *  leave type cannot be removed while any leave still points at it. */
 let regressionLeaveTypeId: string | null = null;
+/** The carry-forward check's own leave type, cleared the same way. */
+let carryLeaveTypeId: string | null = null;
 
 /**
  * Count the queries a piece of work runs, when PRISMA_LOG_QUERIES=1 is set.
@@ -110,7 +113,7 @@ async function main() {
   // A run that died before its `finally` leaves this behind, and the code is
   // unique. Cleared by that exact code, never by a predicate that could match
   // a leave type the HR Head entered.
-  await prisma.leaveType.deleteMany({ where: { code: "QA_REG" } });
+  await prisma.leaveType.deleteMany({ where: { code: { in: ["QA_REG", "QA_REG_CARRY"] } } });
 
   // ---------------------------------------------------------------------
   console.log("\n1 · A person who has left cannot sign in (§6.6)");
@@ -633,9 +636,9 @@ async function main() {
     take: 20,
   });
   if (roster.length >= 2 && countQueries) {
-    const batched = await countQueries(() => leaveTypesForMany(roster, 2026));
+    const batched = await countQueries(() => leaveTypesForMany(roster, calendarDate(2026, 6, 1)));
     const oneByOne = await countQueries(async () => {
-      for (const person of roster) await leaveTypesFor(person, 2026);
+      for (const person of roster) await leaveTypesFor(person, calendarDate(2026, 6, 1));
     });
     check(
       `balances for ${roster.length} people: ${batched} queries batched, ${oneByOne} one at a time`,
@@ -644,8 +647,8 @@ async function main() {
     );
     check(
       "and the batched answer is the same answer",
-      JSON.stringify((await leaveTypesForMany(roster, 2026)).get(roster[0]!.id)) ===
-        JSON.stringify(await leaveTypesFor(roster[0]!, 2026)),
+      JSON.stringify((await leaveTypesForMany(roster, calendarDate(2026, 6, 1))).get(roster[0]!.id)) ===
+        JSON.stringify(await leaveTypesFor(roster[0]!, calendarDate(2026, 6, 1))),
     );
   } else {
     console.log("  · query counting needs PRISMA_LOG_QUERIES=1 — skipped");
@@ -665,7 +668,7 @@ async function main() {
   // ---------------------------------------------------------------------
   const anyone = roster[0];
   if (anyone) {
-    const theirTypes = await leaveTypesFor(anyone, todayInDhaka().getUTCFullYear());
+    const theirTypes = await leaveTypesFor(anyone, todayInDhaka());
     const unpaid = theirTypes.find((t) => t.code === "UNPAID");
     check("the seeded unpaid type is recognised as uncounted", unpaid?.uncounted === true);
     check("and every other type is not", theirTypes.filter((t) => t.uncounted).length === 1);
@@ -678,7 +681,7 @@ async function main() {
       to: from,
       today: todayInDhaka(),
       days: planLeaveDays(from, from, new Set()),
-      balances: [{ year: 2026, balance: { entitled: 0, taken: 0, pending: 1, available: 0, applicable: -1 } }],
+      balances: [{ period: { from: calendarDate(2026, 1, 1), to: calendarDate(2026, 12, 31) }, balance: { entitled: 0, taken: 0, pending: 1, available: 0, applicable: -1 } }],
       overBalance: "WARN",
       lateReason: "",
       overlappingDates: new Set<string>(),
@@ -725,7 +728,7 @@ async function main() {
       to: from,
       today: calendarDate(2026, 9, 1),
       days: planLeaveDays(from, from, new Set()),
-      balances: [{ year: 2026, balance: { entitled: 10, taken: 0, pending: 0, available: 10, applicable: 10 } }],
+      balances: [{ period: { from: calendarDate(2026, 1, 1), to: calendarDate(2026, 12, 31) }, balance: { entitled: 10, taken: 0, pending: 0, available: 10, applicable: 10 } }],
       overBalance: "REFUSE",
       lateReason: "",
       overlappingDates: new Set(["2026-10-19"]),
@@ -832,7 +835,7 @@ async function main() {
   );
 
   // ---------------------------------------------------------------------
-  console.log("\n18 · Leave over New Year is priced and paid for by both years");
+  console.log("\n18 · Leave across a leave-year boundary is priced and paid for by both years");
   // ---------------------------------------------------------------------
   check("both years of a Christmas week are seen", yearsSpanned(
     calendarDate(2026, 12, 28),
@@ -855,8 +858,9 @@ async function main() {
     joiningDate: calendarDate(2020, 1, 1),
   });
   const crosserRow = (await prisma.employee.findUnique({ where: { id: crosser.employeeId } }))!;
-  for (const year of yearsSpanned(calendarDate(2026, 12, 28), calendarDate(2027, 1, 8))) {
-    await ensureEntitlements(crosserRow, year);
+  // Joined 1 January 2020, so this person's leave years still turn on 1 January.
+  for (const period of leaveYearsSpanned(crosserRow.joiningDate, calendarDate(2026, 12, 28), calendarDate(2027, 1, 8))) {
+    await ensureEntitlements(crosserRow, period.from);
   }
   const casualType = (await prisma.leaveType.findFirst({ where: { code: "CASUAL" } }))!;
   const days2027 = await prisma.leaveEntitlement.count({
@@ -993,45 +997,144 @@ async function main() {
   console.log("\n20 · Unused earned leave carries into next year (§12.2)");
   // ---------------------------------------------------------------------
   check("what carries is what was left, capped", carriedForwardDays(20, 5, 40) === 15);
+  const earned = (await prisma.leaveType.findFirst({
+    where: { code: "EARNED" },
+    include: { rules: true },
+  }))!;
+  check(
+    "earned leave no longer carries forward (FCSL, 10 September 2026)",
+    earned.rules.length > 0 && earned.rules.every((rule) => !rule.carryForward),
+  );
+  // The mechanism, on a type of our own that does carry — so this check
+  // outlives whatever FCSL next decides about earned leave.
+  const carrying = await prisma.leaveType.create({
+    data: {
+      name: "QA carrying leave",
+      code: "QA_REG_CARRY",
+      rules: {
+        create: [
+          {
+            effectiveFrom: calendarDate(2020, 1, 1),
+            daysPerYear: 20,
+            carryForward: true,
+            carryForwardCap: 40,
+            createdByName: "qa",
+          },
+        ],
+      },
+    },
+  });
+  carryLeaveTypeId = carrying.id;
   const carrier = await fixture("qa-reg-carrier@qa.fcsl.invalid", "QA Carrier", {
     joiningDate: calendarDate(2020, 1, 1),
   });
   const carrierRow = (await prisma.employee.findUnique({ where: { id: carrier.employeeId } }))!;
-  await ensureEntitlements(carrierRow, 2026);
-  const earned = (await prisma.leaveType.findFirst({ where: { code: "EARNED" } }))!;
-  const earned2026 = await prisma.leaveEntitlement.findFirst({
-    where: { employeeId: carrier.employeeId, leaveTypeId: earned.id, fromDate: calendarDate(2026, 1, 1) },
+  await ensureEntitlements(carrierRow, calendarDate(2026, 6, 1));
+  const granted2026 = await prisma.leaveEntitlement.findFirst({
+    where: {
+      employeeId: carrier.employeeId,
+      leaveTypeId: carrying.id,
+      fromDate: calendarDate(2026, 1, 1),
+      source: "GRANT",
+    },
   });
-  await ensureEntitlements(carrierRow, 2027);
+  await ensureEntitlements(carrierRow, calendarDate(2027, 6, 1));
   const carriedBucket = await prisma.leaveEntitlement.findFirst({
     where: {
       employeeId: carrier.employeeId,
-      leaveTypeId: earned.id,
+      leaveTypeId: carrying.id,
       fromDate: calendarDate(2027, 1, 1),
       source: "CARRY_FORWARD",
     },
   });
   check(
     "a carry-forward bucket is created for a type that carries",
-    carriedBucket !== null && Number(carriedBucket.days) === Number(earned2026?.days ?? 0),
-    `carried ${Number(carriedBucket?.days ?? 0)} of ${Number(earned2026?.days ?? 0)}`,
+    carriedBucket !== null && Number(carriedBucket.days) === Number(granted2026?.days ?? 0),
+    `carried ${Number(carriedBucket?.days ?? 0)} of ${Number(granted2026?.days ?? 0)}`,
   );
-  const casualCarried = await prisma.leaveEntitlement.count({
-    where: {
-      employeeId: carrier.employeeId,
-      leaveTypeId: casualType.id,
-      source: "CARRY_FORWARD",
-    },
-  });
-  check("and none for a type that does not carry", casualCarried === 0);
+  check(
+    "and none for earned leave, which does not",
+    (await prisma.leaveEntitlement.count({
+      where: { employeeId: carrier.employeeId, leaveTypeId: earned.id, source: "CARRY_FORWARD" },
+    })) === 0,
+  );
   // Idempotent: opening the page twice must not double it.
-  await ensureEntitlements(carrierRow, 2027);
+  await ensureEntitlements(carrierRow, calendarDate(2027, 6, 1));
   check(
     "running it again does not carry the days a second time",
     (await prisma.leaveEntitlement.count({
-      where: { employeeId: carrier.employeeId, leaveTypeId: earned.id, source: "CARRY_FORWARD" },
+      where: { employeeId: carrier.employeeId, leaveTypeId: carrying.id, source: "CARRY_FORWARD" },
     })) === 1,
   );
+
+  // ---------------------------------------------------------------------
+  console.log("\n20b · Probation, worked through FCSL's own example (10 September 2026)");
+  // ---------------------------------------------------------------------
+  const probationer = await fixture("qa-reg-probation@qa.fcsl.invalid", "QA Probationer", {
+    joiningDate: calendarDate(2026, 1, 1),
+  });
+  const probationerRow = (await prisma.employee.findUnique({ where: { id: probationer.employeeId } }))!;
+  const sickType = (await prisma.leaveType.findFirst({ where: { code: "SICK" } }))!;
+  await ensureEntitlements(probationerRow, calendarDate(2026, 3, 1));
+  const takeGranted = async (leaveTypeId: string, first: Date, last: Date) => {
+    const planned = planLeaveDays(first, last, new Set());
+    const request = await prisma.leaveRequest.create({
+      data: {
+        employeeId: probationer.employeeId,
+        leaveTypeId,
+        reason: "regression",
+        status: "GRANTED",
+        currentStep: 0,
+        days: {
+          create: planned.map((day) => ({
+            employeeId: probationer.employeeId,
+            leaveTypeId,
+            date: day.date,
+            dayKind: day.dayKind,
+            lengthDays: day.lengthDays,
+          })),
+        },
+      },
+    });
+    return prisma.$transaction((tx) => consumeEntitlement(tx, request.id));
+  };
+  // "joined 3 months ago and need 3 days leave" — Monday 6 to Wednesday 8 April.
+  const casualTaken = await takeGranted(casualType.id, calendarDate(2026, 4, 6), calendarDate(2026, 4, 8));
+  // "after 7 months of working I got 2 days sick leave" — Monday 3 and Tuesday 4 August.
+  const sickTaken = await takeGranted(sickType.id, calendarDate(2026, 8, 3), calendarDate(2026, 8, 4));
+  check(
+    "leave taken in probation is paid for, not refused",
+    casualTaken.shortfall === 0 && sickTaken.shortfall === 0,
+    `${casualTaken.shortfall} casual and ${sickTaken.shortfall} sick unfunded`,
+  );
+  const duringProbation = await leaveTypesFor(probationerRow, calendarDate(2026, 9, 1));
+  check(
+    "during probation the balance already shows what is left of the first permanent year",
+    duringProbation.find((type) => type.code === "CASUAL")?.balance.available === 3,
+  );
+  check(
+    "earned leave is closed during probation and names the day it opens",
+    duringProbation.find((type) => type.code === "EARNED")?.availableFrom?.getTime() ===
+      calendarDate(2027, 1, 1).getTime(),
+  );
+
+  await ensureEntitlements(probationerRow, calendarDate(2027, 3, 1));
+  const firstPermanent = await leaveTypesFor(probationerRow, calendarDate(2027, 3, 1));
+  const left = (code: string) => firstPermanent.find((type) => type.code === code)?.balance.available;
+  check(`"that year I will only have 3 casual leave"`, left("CASUAL") === 3, String(left("CASUAL")));
+  check(`"and will have 4 sick leaves"`, left("SICK") === 4, String(left("SICK")));
+  check("and earned leave has opened in full", left("EARNED") === 20, String(left("EARNED")));
+  check(
+    "one advance bucket, not one per year",
+    (await prisma.leaveEntitlement.count({
+      where: { employeeId: probationer.employeeId, leaveTypeId: casualType.id, source: "GRANT" },
+    })) === 1,
+  );
+
+  await ensureEntitlements(probationerRow, calendarDate(2028, 3, 1));
+  const yearAfter = await leaveTypesFor(probationerRow, calendarDate(2028, 3, 1));
+  const after = (code: string) => yearAfter.find((type) => type.code === code)?.balance.available;
+  check(`"Next year I'll have all 6, 6"`, after("CASUAL") === 6 && after("SICK") === 6, `${after("CASUAL")}, ${after("SICK")}`);
 
   // ---------------------------------------------------------------------
   console.log("\n21 · The database holds the rules the code only checked (§6.9, §5.1)");
@@ -1177,7 +1280,7 @@ async function main() {
       to,
       today: calendarDate(2026, 9, 1),
       days: planLeaveDays(from, to, new Set()),
-      balances: [{ year: 2026, balance: { entitled: 0, taken: 0, pending: 0, available: 0, applicable: 0 } }],
+      balances: [{ period: { from: calendarDate(2026, 1, 1), to: calendarDate(2026, 12, 31) }, balance: { entitled: 0, taken: 0, pending: 0, available: 0, applicable: 0 } }],
       overBalance: "WARN",
       lateReason: "",
       overlappingDates: new Set<string>(),
@@ -1231,8 +1334,8 @@ async function main() {
     joiningDate: calendarDate(2020, 1, 1),
   });
   const adjustedRow = (await prisma.employee.findUnique({ where: { id: adjusted.employeeId } }))!;
-  await ensureEntitlements(adjustedRow, 2026);
-  const before = (await leaveTypesFor(adjustedRow, 2026)).find((t) => t.code === "CASUAL")!;
+  await ensureEntitlements(adjustedRow, calendarDate(2026, 6, 1));
+  const before = (await leaveTypesFor(adjustedRow, calendarDate(2026, 6, 1))).find((t) => t.code === "CASUAL")!;
   await prisma.leaveEntitlement.create({
     data: {
       employeeId: adjusted.employeeId,
@@ -1245,7 +1348,7 @@ async function main() {
       createdByName: "qa",
     },
   });
-  const afterDown = (await leaveTypesFor(adjustedRow, 2026)).find((t) => t.code === "CASUAL")!;
+  const afterDown = (await leaveTypesFor(adjustedRow, calendarDate(2026, 6, 1))).find((t) => t.code === "CASUAL")!;
   check(
     `taking days away lowers what is entitled — ${before.balance.entitled} to ${afterDown.balance.entitled}`,
     afterDown.balance.entitled === before.balance.entitled - 3,
@@ -1262,7 +1365,7 @@ async function main() {
       createdByName: "qa",
     },
   });
-  const afterUp = (await leaveTypesFor(adjustedRow, 2026)).find((t) => t.code === "CASUAL")!;
+  const afterUp = (await leaveTypesFor(adjustedRow, calendarDate(2026, 6, 1))).find((t) => t.code === "CASUAL")!;
   check("and adding days raises it", afterUp.balance.entitled === before.balance.entitled + 2);
   check(
     "the grant itself is untouched — adjustments are new rows, never edits",
@@ -1546,6 +1649,9 @@ main()
     await cleanFixtures();
     if (regressionLeaveTypeId) {
       await prisma.leaveType.deleteMany({ where: { id: regressionLeaveTypeId } });
+    }
+    if (carryLeaveTypeId) {
+      await prisma.leaveType.deleteMany({ where: { id: carryLeaveTypeId } });
     }
     console.log(`\n${passed} passed, ${failed} failed  (${toISODate(todayInDhaka())})\n`);
     if (failed) process.exitCode = 1;

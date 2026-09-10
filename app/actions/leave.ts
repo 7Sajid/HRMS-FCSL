@@ -12,7 +12,8 @@ import {
   planLeaveDays,
   preflight,
   workingDayCost,
-  yearsSpanned,
+  leaveYearsSpanned,
+  mergeSharedBalances,
 } from "@/lib/leave";
 import {
   bookedDates,
@@ -65,31 +66,40 @@ export async function applyForLeave(_previous: unknown, formData: FormData): Pro
     if (!own) return { error: "Pick one of your own uploaded documents." };
   }
 
-  // Every year the dates touch, not just the first one. A week off over
-  // Christmas is two leave years, and both of them have holidays and an
-  // entitlement of their own.
-  const years = yearsSpanned(from, to);
-  for (const year of years) await ensureEntitlements(employee, year);
+  // Every leave year the dates touch, not just the first one. A week off across
+  // somebody's joining anniversary is two leave years, and each has an
+  // entitlement of its own.
+  const periods = leaveYearsSpanned(employee.joiningDate, from, to);
+  for (const period of periods) await ensureEntitlements(employee, period.from);
 
-  const [byYear, calendar, booked, maximum] = await Promise.all([
-    Promise.all(years.map(async (year) => ({ year, types: await leaveTypesFor(employee, year) }))),
+  const [byPeriod, calendar, booked, maximum] = await Promise.all([
+    Promise.all(periods.map((period) => leaveTypesFor(employee, period.from))),
     calendarForRange(from, to),
     bookedDates(employee.id),
     prisma.setting.findUnique({ where: { key: "leave.maximumDays" } }),
   ]);
 
-  const types = byYear[0]!.types;
+  const types = byPeriod[0]!;
   const type = types.find((t) => t.id === leaveTypeId);
   if (!type) return { error: "Pick a leave type." };
 
-  // The same leave type in each year, with that year's balance against it. A
-  // type retired between the two years simply has no entry for the later one.
-  const balances = byYear
-    .map(({ year, types: yearTypes }) => {
-      const match = yearTypes.find((t) => t.id === leaveTypeId);
-      return match ? { year, balance: match.balance } : null;
-    })
-    .filter((entry): entry is { year: number; balance: (typeof type)["balance"] } => entry !== null);
+  // Earned leave during probation. Refused with the day it opens, rather than
+  // with "you have 0 left", which reads as though it had been used up.
+  if (type.availableFrom && from < type.availableFrom) {
+    return {
+      error: `${type.name} can be taken once your probation ends, from ${formatDate(type.availableFrom)}.`,
+    };
+  }
+
+  // The same leave type in each leave year, with that year's balance against
+  // it — and years drawing on the same bucket checked as one. A type retired
+  // between the two years simply has no entry for the later one.
+  const balances = mergeSharedBalances(
+    byPeriod.flatMap((periodTypes) => {
+      const match = periodTypes.find((t) => t.id === leaveTypeId);
+      return match ? [{ period: match.period, bucketIds: match.bucketIds, balance: match.balance }] : [];
+    }),
+  ).map(({ period, balance }) => ({ period, balance }));
 
   const days = planLeaveDays(
     from,

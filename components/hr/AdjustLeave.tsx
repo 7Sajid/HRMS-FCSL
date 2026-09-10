@@ -18,11 +18,12 @@ import { ErrorBox, NoticeBox } from "@/components/ui/Feedback";
  */
 export function AdjustLeave({
   employeeId,
-  year,
+  periodLabel,
   types,
 }: {
   employeeId: string;
-  year: number;
+  /** "01 Jun 2026 – 31 May 2027" — the leave year the adjustment goes into. */
+  periodLabel: string;
   types: { id: string; name: string }[];
 }) {
   const router = useRouter();
@@ -45,7 +46,7 @@ export function AdjustLeave({
     <div className="space-y-3">
       {error && <ErrorBox>{error}</ErrorBox>}
       <NoticeBox tone="brand">
-        This is recorded as a dated adjustment for {year}, never as an edit to what was granted.
+        This is recorded as a dated adjustment for the leave year {periodLabel}, never as an edit to what was granted.
         They are told, and the reason you write is what they see.
       </NoticeBox>
       <div className="grid gap-3 sm:grid-cols-3">
@@ -95,7 +96,6 @@ export function AdjustLeave({
               const result = await adjustLeaveBalance(
                 employeeId,
                 typeId,
-                year,
                 Number(days),
                 reason,
               );

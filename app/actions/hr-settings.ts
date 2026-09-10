@@ -80,6 +80,49 @@ export async function setLeaveTypeAudience(
   return { ok: true };
 }
 
+/**
+ * What a leave type does during somebody's probation (FCSL, 10 September 2026)
+ * — see `grantWindow` in lib/leave.ts.
+ *
+ * A property of the type, like who it is for, and audited the same way. It
+ * shapes grants made from now on; a grant already made keeps the window it was
+ * made with, because leave may already have been taken from it.
+ */
+const PROBATION_POLICIES = ["NORMAL", "ADVANCE", "AFTER_PROBATION"] as const;
+
+export async function setLeaveTypeProbation(
+  leaveTypeId: string,
+  probation: (typeof PROBATION_POLICIES)[number],
+): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+  // A server action is a public endpoint; the type annotation checks nothing.
+  if (!PROBATION_POLICIES.includes(probation)) return { error: "Pick one of the options." };
+
+  const type = await prisma.leaveType.findUnique({ where: { id: leaveTypeId } });
+  if (!type) return { error: "Unknown leave type." };
+  if (type.probation === probation) return { ok: true };
+
+  const actorName = context.employee?.fullName ?? context.user.email;
+  await prisma.$transaction(async (tx) => {
+    await tx.leaveType.update({ where: { id: leaveTypeId }, data: { probation } });
+    await record({
+      action: "leavetype.rule_added",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "leaveType",
+      targetId: type.id,
+      targetLabel: type.name,
+      detail: { probation: { from: type.probation, to: probation } },
+      ip: await currentIp(),
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  return { ok: true };
+}
+
 export async function saveLeaveRule(_previous: unknown, formData: FormData): Promise<SettingsResult> {
   const guard = await requireHrHead();
   if (!guard.ok) return { error: guard.error };

@@ -14,40 +14,47 @@ const prisma = new PrismaClient();
  */
 
 /**
- * Bangladesh Labour Act 2006 minimums (§6.2).
+ * FCSL's leave policy, decided on 10 September 2026 (§6.2).
  *
- * These are a floor, not FCSL's policy. The HR Head raises or renames them on
- * the settings screen without a developer, and each change is saved with the
- * date it takes effect, so last year's leave still computes on last year's
- * rule.
+ * 6 days casual and 6 days sick a leave year — below the Labour Act 2006
+ * figures of 10 and 14 that the system first shipped with. That is FCSL's
+ * decision. Earned leave is 20 days and does not carry forward.
+ *
+ * Leave years run from each person's joining date, and `probation` says what a
+ * type does in the first year — see lib/leave.ts.
+ *
+ * The HR Head changes any of this on the settings screen without a developer,
+ * and each change is saved with the date it takes effect.
  */
 const LEAVE_TYPES = [
   {
     code: "CASUAL",
     name: "Casual leave",
     sortOrder: 1,
-    days: 10,
+    days: 6,
     carryForward: false,
-    note: "Labour Act 2006 s.115 — 10 days.",
+    probation: "ADVANCE",
+    note: "FCSL policy — 6 days a leave year.",
   },
   {
     code: "SICK",
     name: "Sick leave",
     sortOrder: 2,
-    days: 14,
+    days: 6,
     carryForward: false,
     // A medical certificate for anything longer than three days.
     attachmentAfter: 3,
-    note: "Labour Act 2006 s.116 — 14 days.",
+    probation: "ADVANCE",
+    note: "FCSL policy — 6 days a leave year.",
   },
   {
     code: "EARNED",
     name: "Earned leave",
     sortOrder: 3,
     days: 20,
-    carryForward: true,
-    carryForwardCap: 40,
-    note: "Labour Act 2006 s.117 — one day for every 18 worked, so about 20 a year.",
+    carryForward: false,
+    probation: "AFTER_PROBATION",
+    note: "FCSL policy — 20 days a leave year, not carried forward. Labour Act 2006 s.117 gives it after a year's service.",
   },
   {
     code: "MATERNITY",
@@ -58,6 +65,7 @@ const LEAVE_TYPES = [
     // Labour Act 2006 s.46 gives this to women. Without it the type was
     // offered to every employee in the company.
     appliesTo: "FEMALE" as const,
+    probation: "NORMAL",
     note: "Labour Act 2006 s.46 — 16 weeks.",
   },
   {
@@ -68,6 +76,7 @@ const LEAVE_TYPES = [
     carryForward: false,
     // Zero entitlement by definition, so it must be allowed to exceed it.
     warnOnly: true,
+    probation: "NORMAL",
     note: "No entitlement. Recorded so an absence has a reason attached to it.",
   },
 ] as const;
@@ -150,6 +159,7 @@ async function main() {
         name: type.name,
         sortOrder: type.sortOrder,
         appliesTo: "appliesTo" in type ? type.appliesTo : "ALL",
+        probation: type.probation,
       },
     });
 
@@ -164,7 +174,7 @@ async function main() {
           effectiveFrom,
           daysPerYear: type.days,
           carryForward: type.carryForward,
-          carryForwardCap: "carryForwardCap" in type ? type.carryForwardCap : null,
+          carryForwardCap: null,
           overBalance: "warnOnly" in type && type.warnOnly ? "WARN" : "REFUSE",
           attachmentRequiredAfterDays: "attachmentAfter" in type ? type.attachmentAfter : null,
           createdByName: "Installation",
@@ -172,7 +182,7 @@ async function main() {
       });
     }
   }
-  console.log(`✓ ${LEAVE_TYPES.length} leave types, seeded with Labour Act 2006 minimums`);
+  console.log(`✓ ${LEAVE_TYPES.length} leave types, seeded with FCSL's leave policy`);
 
   // --- Settings ------------------------------------------------------------
   for (const setting of SETTINGS) {

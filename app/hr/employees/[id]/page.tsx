@@ -51,10 +51,10 @@ export default async function Page({ params }: Props) {
   // Without this a joiner shows "0 of 0" to whoever opens their file until
   // they happen to visit their own screen — and HR, looking at zeros, would
   // reasonably conclude they had no entitlement at all.
-  await ensureEntitlements(employee, today.getUTCFullYear());
+  await ensureEntitlements(employee, today);
 
   const [balances, branches, departments, designations, grades, managers] = await Promise.all([
-    leaveTypesFor(employee, today.getUTCFullYear()),
+    leaveTypesFor(employee, today),
     prisma.branch.findMany({ where: { closedOn: null }, orderBy: { name: "asc" } }),
     prisma.department.findMany({ where: { retiredAt: null }, orderBy: { name: "asc" } }),
     prisma.designation.findMany({ where: { retiredAt: null }, orderBy: { name: "asc" } }),
@@ -253,7 +253,7 @@ export default async function Page({ params }: Props) {
             <div className="mt-5 border-t border-ink-300/40 pt-5">
               <AdjustLeave
                 employeeId={employee.id}
-                year={today.getUTCFullYear()}
+                periodLabel={`${formatDate(balances[0]!.period.from)} – ${formatDate(balances[0]!.period.to)}`}
                 types={balances
                   .filter((t) => !t.uncounted)
                   .map((t) => ({ id: t.id, name: t.name }))}

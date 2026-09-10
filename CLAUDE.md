@@ -58,7 +58,9 @@ Three rules, and they are the part most likely to cause an argument later:
 ## Things that are settled and must not be re-litigated (§12)
 
 - Weekly off is **Friday and Saturday**. Public holidays are entered yearly by the HR Head.
-- Leave types and their days are configured by the HR Head, seeded with Bangladesh Labour Act 2006 minimums. Never hardcoded, and each change is dated so last year's leave still computes on last year's rule.
+- Leave types and their days are configured by the HR Head. Never hardcoded, and each change is dated so last year's leave still computes on last year's rule. FCSL's figures (10 September 2026): **casual 6, sick 6, earned 20 with no carry-forward**, maternity 16 weeks, leave without pay.
+- **Each person's leave year runs from their joining date**, not 1 January (FCSL, 10 September 2026).
+- **Probation** is the first year, or until HR's confirmation date. Casual and sick leave can be taken during it, but the days come out of the first permanent year — one bucket whose window runs from the joining date to the end of that year. Earned leave opens when probation ends. Which type does which is `LeaveType.probation`, the HR Head's setting.
 - Employee ID is **`A XXX - YY - 70`**. `XXX` never resets and is never reused. The letter advances at 999. `YY` is the joining year. `70` is constant. The highest existing is `A 412 - 26 - 70`.
 - The RM certificate warns **four months** before expiry and **never blocks** the person or their work.
 - Documents are purged one year after the last working day; **the employee record is kept permanently** so headcount reports stay correct.
