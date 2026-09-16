@@ -1639,6 +1639,42 @@ async function main() {
     );
   }
 
+  console.log("\n32 · No table is left open to the Data API (16 September 2026)");
+  {
+    // Supabase hands every table `postgres` creates to the `anon` role, so a
+    // migration that adds a model publishes it unless the default privilege is
+    // still revoked. The revoke is invisible — nothing fails, the table is
+    // simply readable from the internet — so it is checked here rather than
+    // remembered.
+    //
+    // Locally there is no `anon` role and no PostgREST, so what is checkable on
+    // this database is the second layer: RLS on, every table, no exceptions.
+    const open = await prisma.$queryRaw<{ relname: string }[]>`
+      SELECT c.relname
+      FROM pg_class c
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r' AND NOT c.relrowsecurity
+      ORDER BY c.relname
+    `;
+    check(
+      "every table in public has row level security enabled",
+      open.length === 0,
+      open.length ? `open: ${open.map((r) => r.relname).join(", ")}` : "",
+    );
+
+    const migration = source("prisma/migrations/20260916071500_close_the_data_api/migration.sql");
+    check(
+      "[source] and the default privilege is revoked, so the next new table is not published",
+      /ALTER DEFAULT PRIVILEGES IN SCHEMA public REVOKE ALL ON TABLES FROM anon, authenticated/.test(
+        migration,
+      ),
+    );
+    check(
+      "[source] RLS is ENABLEd and not FORCEd — the owner is the application",
+      /ENABLE ROW LEVEL SECURITY/.test(migration) && !/FORCE ROW LEVEL SECURITY/.test(migration),
+    );
+  }
+
   if (sequenceBefore) {
     await prisma.employeeIdSequence.update({
       where: { id: 1 },

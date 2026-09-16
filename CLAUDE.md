@@ -87,6 +87,7 @@ And one that is absolute: **nobody at any level can read somebody else's private
 - Prisma: models PascalCase, fields camelCase, no `@map`. `cuid()` ids. `@db.Timestamptz(3)` for instants, `@db.Date` for calendar dates. Nullable timestamps as state (`disabledAt`, `revokedAt`, `retiredAt`) rather than booleans — *when* is a question HR will ask.
 - Every historical row carries the actor's id **and** a denormalised `…ByName` snapshot, so the record still reads correctly after the account changes or is disabled.
 - `prisma db push` is **banned**. The audit trigger and the partial unique indexes are hand-written SQL that `db push` would silently drop.
+- **A new table is published to the internet unless something stops it.** Supabase's Data API serves the whole `public` schema to whoever holds the publishable key, and its default privileges grant every table `postgres` creates to `anon`. On 16 September 2026 all 42 were readable and writable that way. `20260916071500_close_the_data_api` revoked the grant, revoked the default so later tables do not inherit it, and turned RLS on everywhere — `ENABLE`, never `FORCE`, because the owner is the application. A new model needs nothing extra, but §32 of `qa-regressions` checks that, so run it after a migration that adds one.
 - Comments explain **why**, not what, and carry the decision and the alternative that was rejected.
 
 ## Build order
