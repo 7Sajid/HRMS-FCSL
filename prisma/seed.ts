@@ -122,7 +122,7 @@ const SETTINGS = [
 async function main() {
   // --- The employee ID counter (§12.1) -------------------------------------
   // "Your highest existing ID is A 412 - 26 - 70", so the next is 413. The
-  // import of the 412 existing staff sets this again when it finishes.
+  // import of the 412 existing employees sets this again when it finishes.
   await prisma.employeeIdSequence.upsert({
     where: { id: 1 },
     // Never clobber a counter that has already issued IDs.
@@ -231,7 +231,7 @@ async function main() {
       });
 
       // The Super Admin is a named director, and a director is a person with a
-      // staff file. Created directly at Stage 2 — there is nobody above them to
+      // employee file. Created directly at Stage 2 — there is nobody above them to
       // open the locked door, and nothing for that door to protect.
       const employee = await tx.employee.create({
         data: {

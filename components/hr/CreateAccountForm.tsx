@@ -83,7 +83,7 @@ export function CreateAccountForm({ canCreateSenior }: { canCreateSenior: boolea
           error={error?.field === "role" ? error.error : undefined}
         >
           <Select id="role" name="role" defaultValue="EMPLOYEE">
-            <option value="EMPLOYEE">Employee</option>
+            <option value="EMPLOYEE">Executive</option>
             <option value="MANAGER">Manager · Department Head · Divisional Manager</option>
             <option value="HR_EXECUTIVE">HR Executive</option>
             {canCreateSenior && <option value="HR_HEAD">HR Head</option>}
@@ -91,14 +91,14 @@ export function CreateAccountForm({ canCreateSenior }: { canCreateSenior: boolea
           </Select>
         </Field>
         <Field
-          label="Staff or RM"
+          label="Executive or Associate"
           htmlFor="staffType"
           required
-          hint="An RM must also supply an experience letter, a release letter and their BSEC certificate."
+          hint="An Associate must also supply an experience letter, a release letter and their BSEC certificate."
         >
           <Select id="staffType" name="staffType" defaultValue="STAFF">
-            <option value="STAFF">Staff</option>
-            <option value="RM">Relationship Manager</option>
+            <option value="STAFF">Executive</option>
+            <option value="RM">Associate</option>
           </Select>
         </Field>
       </div>

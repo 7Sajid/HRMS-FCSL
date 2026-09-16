@@ -27,7 +27,7 @@ export type ImportResult =
  * why."
  *
  * Dry by default. Nothing is written unless `commit` is set AND the file is
- * clean: a partial import of 412 staff is worse than none, because nobody can
+ * clean: a partial import of 412 employees is worse than none, because nobody can
  * tell afterwards which half went in.
  */
 export async function importEmployees(
@@ -36,7 +36,7 @@ export async function importEmployees(
 ): Promise<ImportResult> {
   const context = await getSessionContext();
   if (!context) return { error: "Please sign in again." };
-  if (!can(context.viewer, "employees.setup")) return { error: "You cannot import staff." };
+  if (!can(context.viewer, "employees.setup")) return { error: "You cannot import employees." };
 
   const file = formData.get("file");
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a CSV file." };

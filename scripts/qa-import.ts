@@ -74,7 +74,7 @@ async function main() {
   check("nothing required is missing", good.missingColumns.length === 0);
   check("all four rows read", good.rows.length === 4, String(good.rows.length));
   check(
-    "the RM certificate dates come through",
+    "the Associate certificate dates come through",
     good.rows[1]!.certificateExpiry?.toISOString().slice(0, 10) === "2026-11-30",
   );
   check(
@@ -82,7 +82,7 @@ async function main() {
     good.rows[1]!.manager === "A 001 - 19 - 70",
   );
   check(
-    "staff and RM are told apart",
+    "executives and Associates are told apart",
     good.rows[0]!.staffType === "STAFF" && good.rows[1]!.staffType === "RM",
   );
 

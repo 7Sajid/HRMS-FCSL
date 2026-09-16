@@ -8,9 +8,9 @@ import type { DocumentKind, StaffType } from "@prisma/client";
  * that exists on one and not the others is a document somebody is asked for
  * and then never checked, or checked and never asked for.
  *
- * Note the specification's table has three columns — Employee, RM, Manager/HR
+ * Note the specification's table has three columns — Employee, Associate, Manager/HR
  * — and the Employee and Manager/HR columns are identical in every single row.
- * Only being an RM changes what is demanded, so that is the only axis here.
+ * Only being an Associate changes what is demanded, so that is the only axis here.
  */
 
 export type Requirement = "required" | "optional" | "not_applicable";
@@ -114,7 +114,7 @@ export const DOCUMENT_CATALOGUE: readonly DocumentSpec[] = [
   },
   {
     kind: "RM_CERTIFICATE",
-    label: "RM certificate",
+    label: "Associate certificate",
     note: "The BSEC licence. Enter its number, issue date and expiry date with it.",
     staff: "not_applicable",
     rm: "required",

@@ -123,7 +123,7 @@ export async function employeeIdIsTaken(employeeId: string): Promise<boolean> {
 /**
  * Move the counter past every ID already in use.
  *
- * Run after the import of the 412 existing staff, so the next person to join
+ * Run after the import of the 412 existing employees, so the next person to join
  * gets 413 rather than colliding with somebody already imported. Only ever
  * moves the counter FORWARD — winding it back would hand out a number
  * somebody already holds.

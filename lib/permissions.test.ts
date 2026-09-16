@@ -21,7 +21,7 @@ import {
  * put them side by side, and a row that has been quietly widened shows up as a
  * changed character rather than as a missing test.
  *
- * Columns are in the document's order: Employee/RM · Manager · HR Executive ·
+ * Columns are in the document's order: Executive/Associate · Manager · HR Executive ·
  * HR Head · Super Admin.
  */
 
@@ -46,7 +46,7 @@ const SECTION_9: Row[] = [
   { spec: "Approve documents, create accounts", capability: "accounts.create", grid: "——✓✓✓" },
   { spec: "Submit branch attendance", capability: "attendance.submit", grid: "—✓———" },
   { spec: "Verify and publish attendance", capability: "attendance.verify", grid: "——✓✓—" },
-  { spec: "The RM certificate register", capability: "certificates.manage", grid: "——✓✓✓" },
+  { spec: "The Associate certificate register", capability: "certificates.manage", grid: "——✓✓✓" },
   { spec: "The trading terminal register", capability: "terminals.manage", grid: "———✓✓" },
   { spec: "Record a leaver", capability: "exits.record", grid: "——✓✓✓" },
   { spec: "Issue a show-cause letter", capability: "showcause.issue", grid: "———✓✓" },
@@ -128,8 +128,8 @@ describe("an ordinary employee holds no capability at all", () => {
     }
   });
 
-  it("and neither does an RM — an RM is an employee with one extra document", () => {
-    // There is no RM role by design (§2). If one is ever added, this fails.
+  it("and neither does an Associate — an Associate is an employee with one extra document", () => {
+    // There is no Associate role by design (§2). If one is ever added, this fails.
     expect(ROLES).not.toContain("RM" as Role);
   });
 });

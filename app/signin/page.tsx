@@ -24,7 +24,7 @@ export default async function SignInPage() {
         </div>
 
         <p className="mt-6 text-center text-xs text-ink-400">
-          This system holds staff records. Every sign-in is recorded.
+          This system holds employee records. Every sign-in is recorded.
         </p>
       </div>
     </main>

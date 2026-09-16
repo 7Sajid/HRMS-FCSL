@@ -123,7 +123,7 @@ async function usersWithRole(...roles: Prisma.UserWhereInput["role"][]): Promise
 }
 
 // ---------------------------------------------------------------------------
-// 1. The RM certificate ladder
+// 1. The Associate certificate ladder
 // ---------------------------------------------------------------------------
 
 /**
@@ -159,7 +159,7 @@ export async function runCertificateLadder(today = todayInDhaka()): Promise<JobR
 
   // Fetched once, outside the loop. These two lists are the same for every
   // certificate in the run, and asking for them per certificate meant a
-  // company with sixty RMs sent sixty identical queries before it sent a
+  // company with sixty Associates sent sixty identical queries before it sent a
   // single notification. The managers go the same way: one query for all of
   // them rather than one each.
   const [beforeExpiry, afterExpiry, managers] = await Promise.all([
@@ -193,13 +193,13 @@ export async function runCertificateLadder(today = todayInDhaka()): Promise<JobR
     const expired = days <= 0;
     const headline =
       days === 0
-        ? `${certificate.employee.fullName}'s RM certificate expires today`
+        ? `${certificate.employee.fullName}'s Associate certificate expires today`
         : expired
-          ? `${certificate.employee.fullName}'s RM certificate has expired`
-          : `${certificate.employee.fullName}'s RM certificate expires in ${days} day${days === 1 ? "" : "s"}`;
+          ? `${certificate.employee.fullName}'s Associate certificate has expired`
+          : `${certificate.employee.fullName}'s Associate certificate expires in ${days} day${days === 1 ? "" : "s"}`;
 
     // §8 names different audiences before and after the date: expiring goes to
-    // the RM, their manager and HR; expired goes up to the Super Admin,
+    // the Associate, their manager and HR; expired goes up to the Super Admin,
     // because by then it is a compliance matter rather than an errand.
     const audience = new Set<string>([certificate.employee.userId]);
     if (expired) {
@@ -227,14 +227,14 @@ export async function runCertificateLadder(today = todayInDhaka()): Promise<JobR
     // is not a thing to leave sitting behind a bell icon nobody has opened.
     await sendMail({
       to: certificate.employee.user.email,
-      subject: expired ? "Your RM certificate has expired" : "Your RM certificate needs renewing",
+      subject: expired ? "Your Associate certificate has expired" : "Your Associate certificate needs renewing",
       html: layout({
         heading:
           days === 0
-            ? "Your RM certificate expires today"
+            ? "Your Associate certificate expires today"
             : expired
-              ? "Your RM certificate has expired"
-              : "Your RM certificate needs renewing",
+              ? "Your Associate certificate has expired"
+              : "Your Associate certificate needs renewing",
         lines: [
           `Certificate ${escapeHtml(certificate.certificateNumber)}, expiring ${escapeHtml(formatDate(certificate.expiryDate))}.`,
           expired
@@ -251,7 +251,7 @@ export async function runCertificateLadder(today = todayInDhaka()): Promise<JobR
   await recordQuietly({
     action: "system.cron_ran",
     targetType: "job",
-    targetLabel: "RM certificate warnings",
+    targetLabel: "Associate certificate warnings",
     detail: { considered: certificates.length, warned: acted },
   });
 
@@ -290,7 +290,7 @@ export function ladderRung(daysRemaining: number, today: Date, expiry: Date): Ru
   // and warn twice in some months and not at all in others.
   //
   // Four months is `warningStarts` from lib/certificate.ts, the same function
-  // that turns the RM's own panel amber. Written as a day count here it would
+  // that turns the Associate's own panel amber. Written as a day count here it would
   // be 120 or 123 depending on which months it crossed, and the screen and the
   // email would disagree about when the warning began — in front of the person
   // whose licence it is.

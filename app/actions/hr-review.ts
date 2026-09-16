@@ -113,7 +113,7 @@ export async function saveEmployeeDetails(
 ): Promise<ReviewResult> {
   const context = await getSessionContext();
   if (!context) return { error: "Please sign in again." };
-  if (!can(context.viewer, "employees.setup")) return { error: "You cannot edit staff records." };
+  if (!can(context.viewer, "employees.setup")) return { error: "You cannot edit employee records." };
 
   const parsed = detailsSchema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]!.message };
@@ -337,7 +337,7 @@ export async function approveJoiner(
       },
     });
 
-    // An RM's certificate goes straight onto the register, with the dates that
+    // An Associate's certificate goes straight onto the register, with the dates that
     // were captured with the file. That register is what the four-month
     // warning reads.
     const certificate = employee.documents.find(

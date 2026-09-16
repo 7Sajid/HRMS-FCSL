@@ -33,7 +33,7 @@ const SETTING_LABELS: Record<string, { label: string; note: string }> = {
   },
   "certificate.warnMonthsBefore": {
     label: "Certificate warning (months)",
-    note: "How far ahead the RM certificate warning starts. It warns only — it never blocks.",
+    note: "How far ahead the Associate certificate warning starts. It warns only — it never blocks.",
   },
   "onboarding.reviewReminderWorkingDays": {
     label: "Joiner review reminder",

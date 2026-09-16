@@ -13,7 +13,7 @@ export const metadata = { title: "Trading terminals · FCSL HR" };
  * §6.9 — the TWS register.
  *
  * "Keeping the terminal register next to the certificate register and the
- * staff list means the system can answer the awkward question by itself: is
+ * employee list means the system can answer the awkward question by itself: is
  * anybody holding an active terminal whose certificate has expired, or who has
  * already left the company? That question is very hard to answer when the two
  * lists live in different departments — and it is exactly the question a BSEC
@@ -53,8 +53,8 @@ export default async function Page() {
       const certificate = certificateStatus(employee.certificates[0] ?? null, today);
       const reasons: string[] = [];
       if (employee.status === "LEFT") reasons.push("has left the company");
-      if (certificate.state === "EXPIRED") reasons.push("has an expired RM certificate");
-      if (certificate.state === "NONE") reasons.push("has no RM certificate on file");
+      if (certificate.state === "EXPIRED") reasons.push("has an expired Associate certificate");
+      if (certificate.state === "NONE") reasons.push("has no Associate certificate on file");
       return reasons.length
         ? [{ terminal: terminal.terminalId, name: employee.fullName, id: employee.id, reasons }]
         : [];

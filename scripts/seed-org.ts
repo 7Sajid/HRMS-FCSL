@@ -29,8 +29,8 @@ const DESIGNATIONS = [
   "Head of Department",
   "Divisional Manager",
   "Branch Manager",
-  "Senior Relationship Manager",
-  "Relationship Manager",
+  "Senior Associate",
+  "Associate",
   "Senior Executive",
   "Executive",
   "Junior Executive",
@@ -44,7 +44,7 @@ const GRADES: [string, number][] = [
   ["Grade 2", 3],
   ["Grade 3", 4],
   ["Grade 4", 5],
-  ["Support Staff", 6],
+  ["Support Executive", 6],
 ];
 
 async function list() {

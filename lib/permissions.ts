@@ -192,7 +192,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   HR_HEAD: "HR Head",
   HR_EXECUTIVE: "HR Executive",
   MANAGER: "Manager",
-  EMPLOYEE: "Employee",
+  EMPLOYEE: "Executive",
 };
 
 /**
@@ -312,7 +312,7 @@ export function employeeRecordScope(
  * the loose answer. §6.5 is the reason: a show-cause is the HR HEAD's and the
  * employee's, "and nobody else by default, not even their manager". Three
  * roles hold `documents.readAny` and only two hold `showcause.readAny`, so
- * filing the reply as a document in the staff file — which §6.5 also requires,
+ * filing the reply as a document in the employee file — which §6.5 also requires,
  * "letter, reply and outcome stay together in the file permanently" — would
  * otherwise have handed every HR Executive a disciplinary record they are not
  * entitled to see.

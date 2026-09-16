@@ -189,9 +189,9 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "requisition.approved": "Requisition finally approved",
   "requisition.fulfilled": "Requisition fulfilled",
 
-  "certificate.recorded": "RM certificate recorded",
-  "certificate.renewed": "RM certificate renewed",
-  "certificate.surrendered": "RM certificate surrendered",
+  "certificate.recorded": "Associate certificate recorded",
+  "certificate.renewed": "Associate certificate renewed",
+  "certificate.surrendered": "Associate certificate surrendered",
   "terminal.created": "Trading terminal added",
   "terminal.assigned": "Terminal assigned",
   "terminal.released": "Terminal released",

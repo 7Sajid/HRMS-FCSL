@@ -13,7 +13,7 @@ import type { Role } from "@prisma/client";
 export const MIN_PASSWORD_LENGTH = 8;
 
 /**
- * HR and above hold the keys to four hundred staff files. Twelve, not eight.
+ * HR and above hold the keys to four hundred employee files. Twelve, not eight.
  */
 export const MIN_STAFF_PASSWORD_LENGTH = 12;
 

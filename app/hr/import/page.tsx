@@ -4,7 +4,7 @@ import { Card, PageHeader } from "@/components/ui/Card";
 import { NoticeBox } from "@/components/ui/Feedback";
 import { ImportPanel } from "@/components/hr/ImportPanel";
 
-export const metadata = { title: "Import staff · FCSL HR" };
+export const metadata = { title: "Import employees · FCSL HR" };
 
 /**
  * Server Actions inherit the limit of the route they are called from, and the
@@ -26,14 +26,14 @@ export default async function Page() {
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
       <PageHeader
-        title="Import existing staff"
+        title="Import existing employees"
         subtitle="The people who already work here, with the employee IDs they already have."
       />
 
       <div className="mb-6">
         <NoticeBox tone="brand">
           <p>
-            Existing staff are created <strong className="font-medium">directly at Stage 2</strong>.
+            Existing employees are created <strong className="font-medium">directly at Stage 2</strong>.
             They do not go through the locked door — they are already employed and their files
             already exist. HR attaches their documents over time.
           </p>

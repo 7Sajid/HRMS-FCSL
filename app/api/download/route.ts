@@ -15,7 +15,7 @@ import { contentDisposition } from "@/lib/uploads";
  * It answers 404 rather than 403 when somebody may not read a document. A 403
  * confirms the document exists, and for a show-cause file or a colleague's NID
  * the existence is itself the thing worth hiding. A person who genuinely
- * cannot tell the two apart is a person who cannot enumerate staff files.
+ * cannot tell the two apart is a person who cannot enumerate employee files.
  */
 export async function GET(request: Request): Promise<Response> {
   const context = await getSessionContext();

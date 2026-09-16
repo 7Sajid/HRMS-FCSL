@@ -7,10 +7,10 @@ import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Badge, NoticeBox } from "@/components/ui/Feedback";
 import { DataList, DataRow } from "@/components/ui/DataList";
 
-export const metadata = { title: "My RM certificate · FCSL HR" };
+export const metadata = { title: "My Associate certificate · FCSL HR" };
 
 /**
- * §5.1, "What an RM sees in addition" — a licence panel that counts down in
+ * §5.1, "What an Associate sees in addition" — a licence panel that counts down in
  * plain words.
  *
  * It never blocks anything. That is FCSL's decision and it is the reason this
@@ -19,7 +19,7 @@ export const metadata = { title: "My RM certificate · FCSL HR" };
  */
 export default async function Page() {
   const { employee } = await requireEmployee();
-  // Not an RM: nothing here belongs to them.
+  // Not an Associate: nothing here belongs to them.
   if (employee.staffType !== "RM") redirect("/me/profile");
 
   const certificates = await prisma.rmCertificate.findMany({
@@ -34,7 +34,7 @@ export default async function Page() {
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
       <PageHeader
-        title="My RM certificate"
+        title="My Associate certificate"
         subtitle="The BSEC licence that lets you deal with clients."
         actions={<Badge tone={status.tone}>{status.label}</Badge>}
       />

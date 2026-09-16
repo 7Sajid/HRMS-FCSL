@@ -253,7 +253,7 @@ curl -H "Authorization: Bearer $CRON_SECRET" https://YOUR-APP.vercel.app/api/cro
 3. `/admin/audit` → filter to **Exports and system**. The first line should be *"First Super Admin created at installation"*. If it is not there, the seed did not run against this database.
 4. Create the HR Head from `/hr/accounts/new`. Their temporary password is displayed **once** and is dictated to them by a person — it is never emailed. It expires in seven days and forces a change on first use.
 5. The HR Head then sets up branches, the year's public holidays, and the real departments, designations and grades in `/hr/settings`.
-6. Import the 412 staff from `/hr/import` — dry-run first, which writes nothing and reports every bad row. Afterwards the ID counter continues from the highest imported number.
+6. Import the 412 employees from `/hr/import` — dry-run first, which writes nothing and reports every bad row. Afterwards the ID counter continues from the highest imported number.
 
 ---
 

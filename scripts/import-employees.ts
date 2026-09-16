@@ -5,18 +5,18 @@ import { commitImport } from "../lib/import-commit";
 import { args, die, finish, prisma, required } from "./_cli";
 
 /**
- * The 412 existing staff, from the terminal.
+ * The 412 existing employees, from the terminal.
  *
  * Same library the screen uses, so there is one implementation of the rules.
  * Dry by default — nothing is written unless --commit is given AND the file is
  * clean, because a partial import of 412 people is worse than none: nobody can
  * tell afterwards which half went in.
  *
- *   npm run hrm:import -- --file staff.csv
- *   npm run hrm:import -- --file staff.csv --commit
+ *   npm run hrm:import -- --file employees.csv
+ *   npm run hrm:import -- --file employees.csv --commit
  */
 
-const USAGE = "npm run hrm:import -- --file staff.csv [--commit]";
+const USAGE = "npm run hrm:import -- --file employees.csv [--commit]";
 
 async function main() {
   const values = args();

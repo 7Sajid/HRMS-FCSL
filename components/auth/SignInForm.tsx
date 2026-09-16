@@ -48,7 +48,7 @@ export function SignInForm() {
       <p className="pt-2 text-center text-xs text-ink-500">
         {/* There is no self-service reset on purpose. §4: HR hands the
             password over in person, by phone or in the joining meeting.
-            A reset link in an inbox is a way into somebody's staff file. */}
+            A reset link in an inbox is a way into somebody's employee file. */}
         Forgotten your password? Ask HR to issue a new one.
       </p>
     </form>

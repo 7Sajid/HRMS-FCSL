@@ -13,7 +13,7 @@ export const metadata = { title: "My information · FCSL HR" };
  *
  * Read-only on purpose, with a Request a correction button that sends a note
  * rather than changing anything — so a person's own record cannot be edited by
- * the person it describes, which is the point of a staff file.
+ * the person it describes, which is the point of an employee file.
  */
 export default async function Page() {
   const { employee } = await requireEmployee();
@@ -62,7 +62,7 @@ export default async function Page() {
         <DataList>
           <DataRow
             label="Role"
-            value={detail.staffType === "RM" ? "Relationship Manager" : "Employee"}
+            value={detail.staffType === "RM" ? "Associate" : "Executive"}
           />
           <DataRow label="Designation" value={detail.designation?.name} />
           <DataRow label="Grade" value={detail.grade?.name} />

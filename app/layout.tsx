@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ["latin"], display: "swap" });
 export const metadata: Metadata = {
   title: "FCSL HR",
   description: "First Capital Securities Limited — HR Management System",
-  // Staff files, scanned NIDs and bank details. Nothing here belongs in a
+  // Employee files, scanned NIDs and bank details. Nothing here belongs in a
   // search index, and no preview should ever be generated from a page of it.
   robots: { index: false, follow: false },
 };

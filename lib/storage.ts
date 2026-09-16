@@ -48,7 +48,7 @@ function authHeaders(key: string): Record<string, string> {
 
 // Vercel's filesystem is wiped on every deploy, so uploads written to disk
 // there would be lost — silently, and only noticed when an auditor asks for a
-// staff file. Fail at import rather than at the first upload.
+// employee file. Fail at import rather than at the first upload.
 if (process.env.NODE_ENV === "production" && process.env.VERCEL && !supabase()) {
   throw new Error(
     "SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required in production. " +

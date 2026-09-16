@@ -9,7 +9,7 @@ import { args, box, die, finish, optional, prisma, required } from "./_cli";
  * how a joiner is approved.
  *
  *   npm run hrm:approve -- --email karim@fcslbd.com --branch HO \
- *     --department Trading --designation "Relationship Manager" \
+ *     --department Trading --designation "Associate" \
  *     --grade "Grade 2" --manager boss@fcslbd.com --joining 2026-09-06
  *
  * `--id "A 413 - 26 - 70"` overrides the proposed ID. The system refuses one

@@ -172,7 +172,7 @@ async function main() {
   check("running it again finds nothing left to do", again.acted === 0);
 
   // ---------------------------------------------------------------------
-  console.log("\n2 · The 412-staff import finishes inside a request (§12.1)");
+  console.log("\n2 · The 412-employee import finishes inside a request (§12.1)");
   // ---------------------------------------------------------------------
   // The sequence is put back exactly as found. Fixture IDs would otherwise
   // move the real counter forward permanently, and it only ever moves forward.
@@ -253,10 +253,10 @@ async function main() {
   const certificates = await prisma.rmCertificate.count({
     where: { certificateNumber: { startsWith: "QA-REG-CERT-" } },
   });
-  check("every RM keeps their certificate", certificates === Math.ceil(ROWS / 5), `${certificates}`);
+  check("every Associate keeps their certificate", certificates === Math.ceil(ROWS / 5), `${certificates}`);
 
   check(
-    "nobody arrives behind the locked door — imported staff are already employed",
+    "nobody arrives behind the locked door — imported employees are already employed",
     (await prisma.employee.count({
       where: {
         user: { email: { startsWith: "qa-reg-import-" } },
@@ -589,7 +589,7 @@ async function main() {
   check(`active: ${people.active} counted, ${byHand.active} by hand`, people.active === byHand.active);
   check(`left: ${people.left} counted, ${byHand.left} by hand`, people.left === byHand.left);
   check("managers agree", people.managers === byHand.managers, `${people.managers} vs ${byHand.managers}`);
-  check("RMs agree", people.rms === byHand.rms, `${people.rms} vs ${byHand.rms}`);
+  check("Associates agree", people.rms === byHand.rms, `${people.rms} vs ${byHand.rms}`);
   check("plain employees agree", people.employees === byHand.employees, `${people.employees} vs ${byHand.employees}`);
   check(
     "the three add up to the active headcount",
@@ -760,7 +760,7 @@ async function main() {
   console.log("\n16 · A replacement password can actually be issued (§4)");
   // ---------------------------------------------------------------------
   check(
-    "[source] the staff file offers it — the place both screens point people to",
+    "[source] the employee file offers it — the place both screens point people to",
     /<ReissuePassword/.test(source("app/hr/employees/[id]/page.tsx")),
   );
   check(
@@ -1385,13 +1385,13 @@ async function main() {
   // ---------------------------------------------------------------------
   const draft = releaseLetterTemplate({
     fullName: "QA Leaver",
-    designation: "Relationship Manager",
+    designation: "Associate",
     joiningDate: "12 Jan 2021",
     lastWorkingDay: "30 Sept 2026",
     reason: "RESIGNATION",
   });
   check("the draft names the person, the role and both dates",
-    draft.includes("QA Leaver") && draft.includes("Relationship Manager") &&
+    draft.includes("QA Leaver") && draft.includes("Associate") &&
       draft.includes("12 Jan 2021") && draft.includes("30 Sept 2026"));
   check(
     "and claims nothing about their conduct, which the system does not know",
@@ -1400,7 +1400,7 @@ async function main() {
   const letterBytes = await releaseLetterPdf({
     employeeName: "QA Leaver",
     employeeCode: "A 118 - 21 - 70",
-    designation: "Relationship Manager",
+    designation: "Associate",
     joiningDate: "12 Jan 2021",
     lastWorkingDay: "30 Sept 2026",
     body: draft,

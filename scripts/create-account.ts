@@ -14,11 +14,11 @@ import { args, box, die, finish, optional, prisma, required } from "./_cli";
  * how you recover when the screen is broken at nine in the evening.
  *
  *   npm run hrm:account -- --name "Karim Hossain" --email karim@fcslbd.com \
- *     --mobile 01712345678 --role EMPLOYEE --type RM
+ *     --mobile 01712345678 --role EMPLOYEE --type ASSOCIATE
  */
 
 const USAGE =
-  'npm run hrm:account -- --name "Full Name" --email x@fcslbd.com --mobile 017… [--role EMPLOYEE|MANAGER|HR_EXECUTIVE|HR_HEAD|SUPER_ADMIN] [--type STAFF|RM]';
+  'npm run hrm:account -- --name "Full Name" --email x@fcslbd.com --mobile 017… [--role EMPLOYEE|MANAGER|HR_EXECUTIVE|HR_HEAD|SUPER_ADMIN] [--type EXECUTIVE|ASSOCIATE]';
 
 const ROLES: Role[] = ["EMPLOYEE", "MANAGER", "HR_EXECUTIVE", "HR_HEAD", "SUPER_ADMIN"];
 
@@ -28,10 +28,18 @@ async function main() {
   const email = required(values, "email", USAGE).toLowerCase();
   const mobile = required(values, "mobile", USAGE);
   const role = (optional(values, "role") ?? "EMPLOYEE").toUpperCase() as Role;
-  const staffType = (optional(values, "type") ?? "STAFF").toUpperCase() as StaffType;
+  // FCSL renamed the two kinds of person on 16 September 2026 — executive and
+  // Associate — without renaming the stored values, so the words a person types
+  // here are translated rather than the database being rewritten. The old
+  // spellings still work: this is the tool you reach for when a screen is
+  // broken at nine in the evening, and that is the wrong moment to discover a
+  // vocabulary change.
+  const typed = (optional(values, "type") ?? "EXECUTIVE").toUpperCase();
+  const staffType = ({ EXECUTIVE: "STAFF", ASSOCIATE: "RM", STAFF: "STAFF", RM: "RM" }[typed] ??
+    typed) as StaffType;
 
   if (!ROLES.includes(role)) die(`--role must be one of ${ROLES.join(", ")}`);
-  if (staffType !== "STAFF" && staffType !== "RM") die("--type must be STAFF or RM");
+  if (staffType !== "STAFF" && staffType !== "RM") die("--type must be EXECUTIVE or ASSOCIATE");
   if (await prisma.user.findUnique({ where: { email } })) die(`${email} already has an account.`);
 
   // The password works once and expires in seven days. §4: "An unused

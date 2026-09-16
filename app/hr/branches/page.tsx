@@ -49,7 +49,7 @@ export default async function Page() {
                   </div>
                   <p className="mt-0.5 text-xs text-ink-500">
                     {branch.employees.length} {branch.employees.length === 1 ? "person" : "people"}
-                    {rms ? `, ${rms} RM${rms === 1 ? "" : "s"}` : ""} ·{" "}
+                    {rms ? `, ${rms} Associate${rms === 1 ? "" : "s"}` : ""} ·{" "}
                     {branch.branchManager
                       ? `run by ${branch.branchManager.fullName}`
                       : "no branch manager set"}

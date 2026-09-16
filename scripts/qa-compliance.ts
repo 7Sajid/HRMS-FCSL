@@ -51,7 +51,7 @@ async function main() {
   const hrExec = await person("QA HR Exec", "HR_EXECUTIVE");
   const hrHead = await person("QA HR Head", "HR_HEAD");
   const admin = await person("QA Super Admin", "SUPER_ADMIN");
-  const staff = await person("QA Staff", "EMPLOYEE", boss.employee.id);
+  const staff = await person("QA Executive", "EMPLOYEE", boss.employee.id);
   const bystander = await person("QA Bystander", "EMPLOYEE", boss.employee.id);
 
   try {
@@ -128,7 +128,7 @@ async function main() {
         actorRole: "HR_HEAD",
         targetType: "employee",
         targetId: staff.employee.id,
-        targetLabel: "QA Staff",
+        targetLabel: "QA Executive",
         detail: { showCauseId: showCause.id },
       },
     });

@@ -19,11 +19,11 @@ describe("§4 — what must be uploaded", () => {
     }
   });
 
-  it("demands more of an RM than of an employee", () => {
+  it("demands more of an Associate than of an employee", () => {
     const staff = new Set(requiredKinds("STAFF"));
     const rm = new Set(requiredKinds("RM"));
 
-    // The three things that make an RM an RM.
+    // The three things that mark an Associate.
     expect(rm.has("EXPERIENCE_LETTER")).toBe(true);
     expect(rm.has("RELEASE_LETTER")).toBe(true);
     expect(rm.has("RM_CERTIFICATE")).toBe(true);
@@ -32,11 +32,11 @@ describe("§4 — what must be uploaded", () => {
     expect(staff.has("RELEASE_LETTER")).toBe(false);
     expect(staff.has("RM_CERTIFICATE")).toBe(false);
 
-    // Everything an employee must supply, an RM must supply too.
+    // Everything an employee must supply, an Associate must supply too.
     for (const kind of staff) expect(rm.has(kind)).toBe(true);
   });
 
-  it("never shows an employee the RM certificate box at all", () => {
+  it("never shows an employee the Associate certificate box at all", () => {
     const kinds = onboardingChecklist("STAFF").map((s) => s.kind);
     expect(kinds).not.toContain("RM_CERTIFICATE");
     expect(onboardingChecklist("RM").map((s) => s.kind)).toContain("RM_CERTIFICATE");
@@ -61,7 +61,7 @@ describe("§4 — what must be uploaded", () => {
     expect(kinds).toContain("JOINING_LETTER");
   });
 
-  it("captures issue and expiry dates only with the RM certificate", () => {
+  it("captures issue and expiry dates only with the Associate certificate", () => {
     const withDates = DOCUMENT_CATALOGUE.filter((s) => s.capturesDates).map((s) => s.kind);
     expect(withDates).toEqual(["RM_CERTIFICATE"]);
   });
@@ -149,7 +149,7 @@ describe("what an employee may add after their panel opens (§5.1 page 2)", () =
     expect(kinds).toContain("EDUCATION_CERTIFICATE");
   });
 
-  it("never offers an employee the RM certificate", () => {
+  it("never offers an employee the Associate certificate", () => {
     expect(laterUploadKinds("STAFF", new Set()).map((s) => s.kind)).not.toContain("RM_CERTIFICATE");
     expect(laterUploadKinds("RM", new Set()).map((s) => s.kind)).toContain("RM_CERTIFICATE");
   });

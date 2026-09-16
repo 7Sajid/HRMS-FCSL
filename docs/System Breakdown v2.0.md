@@ -12,7 +12,7 @@ It is written so that **anyone in the company can read it**.
 
 |  |
 | :-: |
-| **WORDS USED IN THIS DOCUMENT****RM** — Relationship Manager. Staff who deal with clients, also called AR (Authorised Representative). **RM certificate** — The BSEC licence an RM must hold to deal with clients. It has an issue date and an expiry date, and must be renewed.**TWS** — Trader Work Station. A trading terminal ID issued for the exchange and held by one named person.**Panel** — What a person sees after logging in. Everyone uses the same website, but each panel shows only what that job allows. |
+| **WORDS USED IN THIS DOCUMENT****Associate** — an employee who deals with clients, licensed by BSEC as an Authorised Representative. Say Associate, never RM or AR *(renamed by FCSL, 16 September 2026)*.**Executive** — an employee who is not an Associate. The word replaced "staff" on the same date. **Associate certificate** — The BSEC licence an Associate must hold to deal with clients. It has an issue date and an expiry date, and must be renewed.**TWS** — Trader Work Station. A trading terminal ID issued for the exchange and held by one named person.**Panel** — What a person sees after logging in. Everyone uses the same website, but each panel shows only what that job allows. |
 
   
   
@@ -21,18 +21,18 @@ It is written so that **anyone in the company can read it**.
 
 ## **1. What this software is for**
 
-Today, most of FCSL's staff information lives in three places: paper files in a cabinet, spreadsheets on somebody's computer, and people's memory. That works until it doesn't.
+Today, most of FCSL's employee information lives in three places: paper files in a cabinet, spreadsheets on somebody's computer, and people's memory. That works until it doesn't.
 
 ### **The six problems it is meant to fix**
 
 |  |  |
 | :-: | :-: |
 | **Problem today** | **What the system does about it** |
-| **Nobody knows when a licence is about to expire** | An RM certificate has an expiry date. If it lapses, that person legally cannot deal with clients. Right now this is tracked by whoever remembers. The system warns **four months before** every expiry, automatically, to the RM, their manager and HR. |
-| **Employee documents are scattered and incomplete** | NID copies, certificates, appointment letters, bank details. When BSEC or an auditor asks for a staff file, someone has to hunt. The system keeps one complete folder per person and shows at a glance who is missing what. |
+| **Nobody knows when a licence is about to expire** | An Associate certificate has an expiry date. If it lapses, that person legally cannot deal with clients. Right now this is tracked by whoever remembers. The system warns **four months before** every expiry, automatically, to the Associate, their manager and HR. |
+| **Employee documents are scattered and incomplete** | NID copies, certificates, appointment letters, bank details. When BSEC or an auditor asks for a employee file, someone has to hunt. The system keeps one complete folder per person and shows at a glance who is missing what. |
 | **Leave runs on paper and verbal approval** | An employee asks a manager, the manager says yes, and HR may or may not hear about it. Every request becomes written, timed and traceable, and the employee sees the decision without walking to anyone's desk. |
 | **Branch attendance arrives late and in different shapes** | Each branch sends its monthly attendance in its own format. Every branch manager gets the same sheet, the same deadline, and one button to submit it. |
-| **Nobody knows the real headcount** | When people leave, the list is not reliably updated. The system marks leavers on a date, so the count of active employees, RMs and managers is always correct and can be produced instantly. |
+| **Nobody knows the real headcount** | When people leave, the list is not reliably updated. The system marks leavers on a date, so the count of active employees, Associates and managers is always correct and can be produced instantly. |
 | **There is no record of who approved what** | For a BSEC-regulated brokerage this is the serious one. Every approval, rejection and document view is recorded with the person's name and the exact time, and can never be edited afterwards. |
 
   
@@ -45,16 +45,16 @@ Everyone opens the same website and logs in with their own email and password. W
 | :-: | :-: | :-: |
 | **Who** | **What they are responsible for** | **What is special about them** |
 | **Super Admin** | Owns the system. Approves the HR Head. Gives the final approval on every leave application and on requisitions that reach the top. | The only account nobody above can approve. |
-| **HR Head** | Runs HR. The middle step in every leave chain. Approves requisitions and staff documents. Creates branches. Issues show-cause letters. Records leavers. Sees every report. | The widest access in the system. Their own leave goes straight to the Super Admin. |
-| **HR Executive** | Does the daily HR work: creates employee accounts, checks uploaded documents, assigns IDs, keeps the RM certificate register, records leavers. | Can create and check, but cannot approve leave or issue disciplinary letters. |
+| **HR Head** | Runs HR. The middle step in every leave chain. Approves requisitions and employee documents. Creates branches. Issues show-cause letters. Records leavers. Sees every report. | The widest access in the system. Their own leave goes straight to the Super Admin. |
+| **HR Executive** | Does the daily HR work: creates employee accounts, checks uploaded documents, assigns IDs, keeps the Associate certificate register, records leavers. | Can create and check, but cannot approve leave or issue disciplinary letters. |
 | **Manager**Department HeadDivisional Manager | The first step for their team's leave. Raises requisitions. Submits the branch attendance sheet each month. | Sees their own team and nobody else. Their own leave starts at the HR Head. |
-| **Employee / RM** | Keeps their own file up to date, applies for leave, sees their own attendance. | Sees only themselves. An RM additionally holds a certificate whose expiry the system watches. |
+| **Executive / Associate** | Keeps their own file up to date, applies for leave, sees their own attendance. | Sees only themselves. An Associate additionally holds a certificate whose expiry the system watches. |
 
   
 
 |  |
 | :-: |
-| **WHY RM SITS WITH EMPLOYEE AND NOT ON ITS OWN**An RM uses exactly the same screens as any other employee. The only differences are that their file must contain a **release letter and experience letter** from their previous employer, and an **RM certificate** whose expiry date the system tracks. They are not a separate kind of user; they are an employee with one extra document attached.  |
+| **WHY ASSOCIATE SITS WITH EXECUTIVE AND NOT ON ITS OWN**An Associate uses exactly the same screens as any other employee. The only differences are that their file must contain a **release letter and experience letter** from their previous employer, and an **Associate certificate** whose expiry date the system tracks. They are not a separate kind of user; they are an employee with one extra document attached.  |
 
   
 
@@ -82,7 +82,7 @@ If you remember one thing from this document, remember this. It is the idea the 
 |  |  |  |
 | :-: | :-: | :-: |
 | **This person's documents…** | **…are approved by** | **What happens on approval** |
-| Employee / RM | **HR Head or HR Executive** | The employee ID is issued and the four employee pages open. |
+| Executive / Associate | **HR Head or HR Executive** | The employee ID is issued and the four employee pages open. |
 | Manager / Department Head | **HR Head or HR Executive** | The four employee pages open, plus the approval page for their team. |
 | HR Executive | **HR Head** | The four employee pages open, plus the HR working pages. |
 | HR Head | **Super Admin** | Everything opens, including branches, compliance, exits and reports. |
@@ -92,7 +92,7 @@ If you remember one thing from this document, remember this. It is the idea the 
 
 ### **Why the locked door is worth the inconvenience**
 
-It would be easier to let everyone in immediately and chase the paperwork later. That is how most offices end up with half-empty staff files. Putting the wall at the start means nobody is ever in the system without a complete file — the file *is* the entry ticket; HR checks documents once, at the moment the person is most motivated to hand them over; and when an auditor asks for staff records, there is no such thing as an incomplete one.
+It would be easier to let everyone in immediately and chase the paperwork later. That is how most offices end up with half-empty employee files. Putting the wall at the start means nobody is ever in the system without a complete file — the file *is* the entry ticket; HR checks documents once, at the moment the person is most motivated to hand them over; and when an auditor asks for employee records, there is no such thing as an incomplete one.
 
 |  |
 | :-: |
@@ -106,7 +106,7 @@ This is the whole onboarding process told as a story.
 
 #### **Step 1 — Before day one, HR creates the account**
 
-The interview is finished and the person has accepted. An HR Executive opens the system and creates an account using **three pieces of information only**: name, email address and mobile number. Nothing else is needed yet. HR also chooses what kind of user this will be — employee, RM or manager — because that decides what will eventually unlock and which documents will be demanded.
+The interview is finished and the person has accepted. An HR Executive opens the system and creates an account using **three pieces of information only**: name, email address and mobile number. Nothing else is needed yet. HR also chooses what kind of user this will be — executive, Associate or manager — because that decides what will eventually unlock and which documents will be demanded.
 
 #### **Step 2 — The password is handed over by a person**
 
@@ -129,7 +129,7 @@ The new joiner logs in and sees the locked panel from Section 3. One screen, one
 
 |  |  |  |  |  |
 | :-: | :-: | :-: | :-: | :-: |
-| **Document** | **Employee** | **RM** | **Manager / HR** | **Notes** |
+| **Document** | **Executive** | **Associate** | **Manager / HR** | **Notes** |
 | CV | **Required** | **Required** | **Required** | PDF only. |
 | NID | **Required** | **Required** | **Required** | Both sides. The system reads this one — see step 4. |
 | Photograph | **Required** | **Required** | **Required** | Becomes the profile picture and the ID card photo. |
@@ -138,7 +138,7 @@ The new joiner logs in and sees the locked panel from Section 3. One screen, one
 | Release letter | Optional | **Required** | Optional | From the previous employer. |
 | Appointment letter | **Required** | **Required** | **Required** | Issued by FCSL when the offer was accepted, so the joiner already holds it. |
 | Joining letter | **Required** | **Required** | **Required** | Signed on the joining day, before the account is used. |
-| **RM certificate** | — | **Required** | — | **The issue date and expiry date are entered with it.** This is what drives the four-month warning. |
+| **Associate certificate** | — | **Required** | — | **The issue date and expiry date are entered with it.** This is what drives the four-month warning. |
 | Bank details | **Required** | **Required** | **Required** | Account name, number, bank, branch, routing number. |
 | Training certificates | Optional | Optional | Optional | Can be added at any time later. |
 
@@ -192,7 +192,7 @@ The employee logs in and the pages described in Section 5 are there. Their file 
 
 ## **5. What each person sees when they log in**
 
-### **5.1   Employee and RM**
+### **5.1   Executive and Associate**
 
 **Page 1 — My personal information.** A read-only summary: employee ID, full name, father's and mother's name, date of birth, photograph, gender, nationality, religion, marital status. The employee looks at it; HR edits it. A **Request a correction** button sends a short note to HR rather than changing anything directly.
 
@@ -206,7 +206,7 @@ The employee logs in and the pages described in Section 5 are there. Their file 
 
 |  |
 | :-: |
-| **WHAT AN RM SEES IN ADDITION**A licence panel that counts down in plain words: *"Valid. Expires 14 March 2027 — 6 months and 11 days remaining."*Four months before expiry the wording changes to **"Renewal due"**, turns amber, and a notification and email go out — to the RM, their manager, the HR Executive and the HR Head on the same day, so it does not depend on one person noticing. If the date passes, the status turns red and reads **"Expired"** and stays at the top of HR's register until it is resolved. **It never blocks the person's account or their work** — as you decided, the system warns and nothing more. |
+| **WHAT AN ASSOCIATE SEES IN ADDITION**A licence panel that counts down in plain words: *"Valid. Expires 14 March 2027 — 6 months and 11 days remaining."*Four months before expiry the wording changes to **"Renewal due"**, turns amber, and a notification and email go out — to the Associate, their manager, the HR Executive and the HR Head on the same day, so it does not depend on one person noticing. If the date passes, the status turns red and reads **"Expired"** and stays at the top of HR's register until it is resolved. **It never blocks the person's account or their work** — as you decided, the system warns and nothing more. |
 
 ### **5.2   Manager, Department Head, Divisional Manager**
 
@@ -216,7 +216,7 @@ All four employee pages — because a manager is also an employee who takes leav
 
 • **Leave waiting for me.** Every application from the manager's own team, showing who, what type, which dates, how many working days, the reason, and how much leave that person has left. Two buttons: **Grant** or **Deny**. A denial needs a written reason — the system will not accept an empty one. **Granting does not finish the application**; it passes it to the HR Head. See Section 7.
 
-• **Raise a requisition.** One form with a type dropdown: office supplies, IT equipment, money or expense, or a request for new staff.
+• **Raise a requisition.** One form with a type dropdown: office supplies, IT equipment, money or expense, or a request for new employees.
 
 • **Submit the branch attendance sheet.** Once a month. The whole branch as a grid — people down the side, days across the top. Approved leave is filled in automatically and cannot be contradicted. On Submit the sheet locks and goes to HR.
 
@@ -228,16 +228,16 @@ The four employee pages, plus four working pages. This is the person who does th
 
 **Page 5 — Set up an employee.** Used at the moment of approving a new joiner, and whenever somebody's situation changes. Four jobs: issue the employee ID (the system proposes the next one automatically — see Section 12); put the person in a category or grade; set who they report to; set their branch. A transfer is recorded as a dated event, never by overwriting: the old branch keeps its history, the new branch takes over from the transfer date.
 
-**Page 6 — Find anybody.** One searchable list of every employee, RM and manager, with filters down the side: branch, department, role, category, manager, joining date, and active or left. Type a name or an ID and the list narrows as you type. Results can be exported to a spreadsheet, and every export is recorded — a list of every employee's details leaving the building is exactly the kind of event an auditor asks about.
+**Page 6 — Find anybody.** One searchable list of every employee, Associate and manager, with filters down the side: branch, department, role, category, manager, joining date, and active or left. Type a name or an ID and the list narrows as you type. Results can be exported to a spreadsheet, and every export is recorded — a list of every employee's details leaving the building is exactly the kind of event an auditor asks about.
 
-**Page 7 — The RM certificate register.** Every RM on one screen with issue date, expiry date, and a status that colours itself: green for valid, amber inside four months, red once expired. HR uploads renewed certificates here and enters the new dates, and the countdown restarts.
+**Page 7 — The Associate certificate register.** Every Associate on one screen with issue date, expiry date, and a status that colours itself: green for valid, amber inside four months, red once expired. HR uploads renewed certificates here and enters the new dates, and the countdown restarts.
 
 **Page 8 — Record a leaver.** The exit process described in Section 6.6. Both the HR Executive and the HR Head can record it.
 
 |  |  |
 | :-: | :-: |
 | **An HR Executive CAN** | **An HR Executive CANNOT** |
-| Create accounts · check and approve documents · issue employee IDs · assign branches, categories and managers · keep the RM certificate register · record a leaver · view any staff file | Approve leave · approve requisitions · issue show-cause letters · create or close branches · manage trading terminals · see company-wide analysis reports |
+| Create accounts · check and approve documents · issue employee IDs · assign branches, categories and managers · keep the Associate certificate register · record a leaver · view any employee file | Approve leave · approve requisitions · issue show-cause letters · create or close branches · manage trading terminals · see company-wide analysis reports |
 
   
 
@@ -281,7 +281,7 @@ The foundation. Everything else points back to a person's record.
 | **Documents** | Every file, with who uploaded it, when, whether HR accepted it, and every earlier version if it was replaced |
 | **Emergency** | Mandatory contact and alternate contact, with the history of every change |
 | **Bank** | Account name, number, bank, branch, routing number |
-| **Licence** (RM only) | RM certificate, number, issue date, expiry date, full renewal history |
+| **Licence** (Associate only) | Associate certificate, number, issue date, expiry date, full renewal history |
 | **History** | Transfers, promotions, changes of manager, resignation and last working day — each with a date, never overwritten |
 
   
@@ -340,13 +340,13 @@ One form, four types. The form changes to suit the type chosen, but the journey 
 | **Office supplies** | Item, quantity, when needed | Admin issues it and marks it delivered |
 | **IT equipment** | Item, specification, replacement or additional | IT issues it; the item is recorded against the person |
 | **Money / expense** | Amount, purpose, advance or reimbursement, bill attached | Accounts pays and marks it settled |
-| **New staff** | Position, how many, why, when needed, budget | HR opens recruitment outside this system |
+| **New employees** | Position, how many, why, when needed, budget | HR opens recruitment outside this system |
 
   
 
 |  |
 | :-: |
-| **DECIDED — WHO MAY RAISE ONE****Managers, department heads and the HR Head only** *(amended by FCSL, 10 September 2026)*. Employees, RMs and HR Executives cannot raise a requisition — they ask their manager, who raises it on their behalf. The requisition then goes from the manager to the HR Head, and above a value FCSL sets, to the Super Admin. The HR Head's own requisition goes straight to the Super Admin. The requester watches it move through those steps on their own screen and is told the moment it is decided, which removes the follow-up phone calls that make up most of the delay in a paper process. |
+| **DECIDED — WHO MAY RAISE ONE****Managers, department heads and the HR Head only** *(amended by FCSL, 10 September 2026)*. Executives, Associates and HR Executives cannot raise a requisition — they ask their manager, who raises it on their behalf. The requisition then goes from the manager to the HR Head, and above a value FCSL sets, to the Super Admin. The HR Head's own requisition goes straight to the Super Admin. The requester watches it move through those steps on their own screen and is told the moment it is decided, which removes the follow-up phone calls that make up most of the delay in a paper process. |
 
 ### **6.5   Compliance and show-cause letters**
 
@@ -375,7 +375,7 @@ Release letters and clearance documents but has no page for handling somebody's 
 | **Step** | **What the system does** |
 | **1. Record the departure** | HR enters the reason — resignation, end of contract, termination, retirement — and the **last working day**. |
 | **2. Clearance checklist** | A list of what must be returned and cleared: IT equipment, ID card, keys, any outstanding advance from Accounts, handover of client files. Each line is ticked off by the department responsible. |
-| **3. Release the licence and terminal** | The RM certificate is marked surrendered and the person drops out of the expiry register. Any TWS terminal held is marked surrendered and freed for reassignment. **The system will not let HR finish an exit while a terminal is still assigned** — the single most important safeguard in the module. |
+| **3. Release the licence and terminal** | The Associate certificate is marked surrendered and the person drops out of the expiry register. Any TWS terminal held is marked surrendered and freed for reassignment. **The system will not let HR finish an exit while a terminal is still assigned** — the single most important safeguard in the module. |
 | **4. Access closes automatically** | At the end of the last working day the account stops working by itself. Nobody has to remember. |
 | **5. Release letter** | Produced from a template and stored in the person's file. |
 | **6. Mark the ID as Left** | The employee ID is marked **Left**, with the date. The ID is never reused and never deleted. The record stays whole so their history remains readable. |
@@ -384,15 +384,15 @@ Release letters and clearance documents but has no page for handling somebody's 
 
 |  |
 | :-: |
-| **WHAT MARKING SOMEBODY "LEFT" MAKES POSSIBLE**This is the point of the whole module. Because every person carries an Active or Left status with a date, the system can answer instantly, and correctly, at any moment in time:**Total active people**, split into employees, RMs and managers · **total who have left**, over any period · the same figures **per branch** and **per department** · how many joined and how many left this month, this quarter, this year · and the **net change in headcount**. Section 6.10 turns these into the report the HR Head sees. |
+| **WHAT MARKING SOMEBODY "LEFT" MAKES POSSIBLE**This is the point of the whole module. Because every person carries an Active or Left status with a date, the system can answer instantly, and correctly, at any moment in time:**Total active people**, split into employees, Associates and managers · **total who have left**, over any period · the same figures **per branch** and **per department** · how many joined and how many left this month, this quarter, this year · and the **net change in headcount**. Section 6.10 turns these into the report the HR Head sees. |
 
 ### **6.7   Branches**
 
-Create a branch and record its details — name, code, address, phone, opening date, branch manager. See everybody attached to it: managers, employees and RMs. Move people between branches as a dated transfer, never by overwriting. Closing a branch is marking it closed on a date, and its people must be moved first. The history survives.
+Create a branch and record its details — name, code, address, phone, opening date, branch manager. See everybody attached to it: managers, employees and Associates. Move people between branches as a dated transfer, never by overwriting. Closing a branch is marking it closed on a date, and its people must be moved first. The history survives.
 
-### **6.8   The RM certificate register**
+### **6.8   The Associate certificate register**
 
-Every RM in the company on one screen, with issue date, expiry date, and a status that colours itself green, amber or red. Sorted so the most urgent sits at the top. HR uploads renewed certificates and enters the new dates, and the countdown restarts. This single page is the answer to the first problem in Section 1.
+Every Associate in the company on one screen, with issue date, expiry date, and a status that colours itself green, amber or red. Sorted so the most urgent sits at the top. HR uploads renewed certificates and enters the new dates, and the countdown restarts. This single page is the answer to the first problem in Section 1.
 
   
 
@@ -406,21 +406,21 @@ A register of every Trader Work Station ID the company holds and who is currentl
 
 |  |
 | :-: |
-| **WHY THIS BELONGS IN THE HR SYSTEM AND NOT WITH IT**A trading terminal is tied to a person, and that person's right to use it depends on their certificate being valid and on their still being employed. Keeping the terminal register next to the certificate register and the staff list means the system can answer the awkward question by itself: **is anybody holding an active terminal whose certificate has expired, or who has already left the company?** That question is very hard to answer when the two lists live in different departments — and it is exactly the question a BSEC inspection asks. |
+| **WHY THIS BELONGS IN THE HR SYSTEM AND NOT WITH IT**A trading terminal is tied to a person, and that person's right to use it depends on their certificate being valid and on their still being employed. Keeping the terminal register next to the certificate register and the employee list means the system can answer the awkward question by itself: **is anybody holding an active terminal whose certificate has expired, or who has already left the company?** That question is very hard to answer when the two lists live in different departments — and it is exactly the question a BSEC inspection asks. |
 
 ### **6.10   Reports and analysis**
 
 In practice, a dashboard answering the questions a Head of HR is actually asked:
 
-• **Headcount** — total active, split into employees, RMs and managers; the same per branch and per department; who joined and who left this month; and the net change. This is the report the exit process in 6.6 exists to make possible.
+• **Headcount** — total active, split into employees, Associates and managers; the same per branch and per department; who joined and who left this month; and the net change. This is the report the exit process in 6.6 exists to make possible.
 
 • **Attendance** — the branches with the most absence, the most lateness, the lowest attendance.
 
 • **Leave** — days taken by type; who is close to exhausting their entitlement; and who has taken none at all, which is itself worth knowing in a brokerage.
 
-• **Documents** — which staff files are still incomplete, and how long they have been that way.
+• **Documents** — which employee files are still incomplete, and how long they have been that way.
 
-• **Certificates** — how many RM certificates expire in the next three, six and twelve months.
+• **Certificates** — how many Associate certificates expire in the next three, six and twelve months.
 
 • **Terminals** — how many TWS IDs are held, assigned and free, and any held by somebody whose certificate has expired or who has left.
 
@@ -447,7 +447,7 @@ This section was the biggest gap in version 1.0 and is now fully settled. Read i
 |  |  |  |  |
 | :-: | :-: | :-: | :-: |
 | **Who applies** | **Step 1** | **Step 2** | **Step 3 — final** |
-| **Employee / RM** | Their **Manager** | **HR Head** | **Super Admin** |
+| **Executive / Associate** | Their **Manager** | **HR Head** | **Super Admin** |
 | **Manager** | **HR Head** | **Super Admin** | — |
 | **HR Executive** | **HR Head** | **Super Admin** | — |
 | **HR Head** | **Super Admin** | — | — |
@@ -489,7 +489,7 @@ Had the manager pressed **Deny** on Monday afternoon, the story would have ended
 | :-: | :-: |
 | **What** | **The route** |
 | **A new person's documents** | The person uploads → **HR Executive or HR Head** approves. Done. The exception is the HR Head's own documents, which go to the Super Admin. |
-| **Requisition** | Raised by a manager, department head or the HR Head → **HR Head** → **Super Admin**, but only if it is above the value FCSL sets. Below that value the HR Head's approval is final. The HR Head's own requisition goes straight to the **Super Admin**. Employees, RMs and HR Executives cannot raise one. |
+| **Requisition** | Raised by a manager, department head or the HR Head → **HR Head** → **Super Admin**, but only if it is above the value FCSL sets. Below that value the HR Head's approval is final. The HR Head's own requisition goes straight to the **Super Admin**. Executives, Associates and HR Executives cannot raise one. |
 | **Branch attendance sheet** | Branch manager submits → **HR verifies and corrects** → HR publishes → every employee in that branch can see their own month. |
 
 ### **7.3   What happens when nobody responds**
@@ -505,8 +505,8 @@ Two channels: a **bell icon inside the software** with a count of unread items, 
 |  |  |  |  |
 | :-: | :-: | :-: | :-: |
 | **What happened** | **Who is told** | **Email** | **When** |
-| **RM certificate expiring** | The RM, their manager, HR Executive, HR Head | **Yes** | 4 months before, then monthly, then weekly in the final month |
-| **RM certificate expired** | The RM, HR Head, Super Admin | **Yes** | On the day, then weekly until resolved |
+| **Associate certificate expiring** | The Associate, their manager, HR Executive, HR Head | **Yes** | 4 months before, then monthly, then weekly in the final month |
+| **Associate certificate expired** | The Associate, HR Head, Super Admin | **Yes** | On the day, then weekly until resolved |
 | Documents approved | The person | **Yes** | Immediately |
 | Documents sent back | The person | **Yes** | Immediately, with the reason |
 | New joiner waiting for review | HR Executive, HR Head | — | Immediately; reminder after 2 working days |
@@ -537,7 +537,7 @@ This table is the privacy policy of the system, and the part employees will ask 
 
 |  |  |  |  |  |  |
 | :-: | :-: | :-: | :-: | :-: | :-: |
-| **Can see or do…** | **Employee / RM** | **Manager** | **HR Executive** | **HR Head** | **Super Admin** |
+| **Can see or do…** | **Executive / Associate** | **Manager** | **HR Executive** | **HR Head** | **Super Admin** |
 | Their own record and documents | **✓** | **✓** | **✓** | **✓** | **✓** |
 | Their own team's records | — | **✓** | — | **✓** | — |
 | Their own team's **documents** | — | — | **✓** | **✓** | **✓** |
@@ -550,7 +550,7 @@ This table is the privacy policy of the system, and the part employees will ask 
 | Approve documents, create accounts | — | — | **✓** | **✓** | **✓** |
 | Submit branch attendance | — | **✓** | — | — | — |
 | Verify and publish attendance | — | — | **✓** | **✓** | — |
-| The RM certificate register | — | — | **✓** | **✓** | **✓** |
+| The Associate certificate register | — | — | **✓** | **✓** | **✓** |
 | The trading terminal register | — | — | — | **✓** | **✓** |
 | **Record a leaver** | — | — | **✓** | **✓** | **✓** |
 | Issue a show-cause letter | — | — | — | **✓** | **✓** |
@@ -604,7 +604,7 @@ The format is **A XXX - YY - 70**, made of four parts:
 
 |  |
 | :-: |
-| **THE 412 EXISTING STAFF**412 existing employees data import after the portal is finished, keeping the IDs they already have. The system is built for this: there is a bulk import screen that takes a spreadsheet, checks every row before saving anything, and reports exactly which rows have a problem and why. Existing staff are created directly at Stage 2 — they do not go through the locked door, because they are already employed and their files already exist. HR then attaches their documents over time. The running counter is set to start at 413 once the import is done. |
+| **THE 412 EXISTING STAFF**412 existing employees data import after the portal is finished, keeping the IDs they already have. The system is built for this: there is a bulk import screen that takes a spreadsheet, checks every row before saving anything, and reports exactly which rows have a problem and why. Existing employees are created directly at Stage 2 — they do not go through the locked door, because they are already employed and their files already exist. HR then attaches their documents over time. The running counter is set to start at 413 once the import is done. |
 
 ### **12.2   Everything else that is now fixed**
 
@@ -615,9 +615,9 @@ The format is **A XXX - YY - 70**, made of four parts:
 | **Public holidays** | The HR Head enters the year's holiday calendar once, at the start of each year, on a settings screen. Government holidays in Bangladesh are announced annually, so this cannot be built into the software permanently. |
 | **Leave types and days** | Set by the HR Head on a settings screen, pre-filled with Bangladesh Labour Act 2006 minimums. Changing them needs no developer. Each change is dated, so old leave records keep their original meaning. |
 | **Leave approval** | Employee → Manager → HR Head → Super Admin, in that order. A denial at any step ends the application and nobody above is told. Full rules in Section 7. |
-| **RM certificate warning** | **Four months before expiry.** Warning only — **the system never blocks the person or their work**, whatever the certificate status. |
+| **Associate certificate warning** | **Four months before expiry.** Warning only — **the system never blocks the person or their work**, whatever the certificate status. |
 | **Document retention** | **One year** after the last working day, then the uploaded files are removed automatically. **The employee record itself is kept permanently** — name, ID, dates, role, branch history, and the fact that they left — so the headcount and joiner-leaver reports stay correct for ever. Only the scanned files go. |
-| **Requisitions** | Managers, HR and Super Admin only. Employees and RMs ask their manager. |
+| **Requisitions** | Managers, HR and Super Admin only. Employees and Associates ask their manager. |
 | **Attendance** | Branch manager submits monthly, HR verifies and publishes. No punch machines, no self check-in. |
 | **Reading documents** | The system reads NIDs and certificates and fills the form, but every field stays marked unconfirmed until a human in HR agrees with it. |
 | **Language** | English only. |
@@ -635,10 +635,10 @@ Four phases. Each ends with something FCSL can actually use, rather than everyth
 |  |  |  |
 | :-: | :-: | :-: |
 | **Phase** | **What gets built** | **What FCSL can do at the end of it** |
-| **1 — Accounts, documents and the locked door** | Logging in, the five panels, the upload screen, reading NID and certificates with HR confirming, HR's review queue, employee IDs, branches, **the bulk import of your 412 existing staff**, and the permanent record underneath it all. | Onboard every existing member of staff and finally have one complete, searchable set of employee files. Solves two of the six problems in Section 1 on its own. |
+| **1 — Accounts, documents and the locked door** | Logging in, the five panels, the upload screen, reading NID and certificates with HR confirming, HR's review queue, employee IDs, branches, **the bulk import of your 412 existing employees**, and the permanent record underneath it all. | Onboard every existing employee and finally have one complete, searchable set of employee files. Solves two of the six problems in Section 1 on its own. |
 | **2 — Leave and attendance** | The leave settings screen, the holiday calendar, applying, the three-step approval chain, the branch attendance grid, HR verification and monthly publication. | Paper leave forms stop. This is the phase every employee will notice. |
 | **3 — Requisition, compliance and exit** | The requisition form and its approval route, show-cause letters, employee replies as automatic PDFs, and the full exit and clearance process. | The internal paper trail moves fully inside the system, and leavers stop being invisible. |
-| **4 — The registers and the reports** | The RM certificate register with its four-month warning, the trading terminal register, and the HR Head's dashboard and exports. | Nobody ever again discovers a certificate expiry by accident, and the real headcount is one click away. |
+| **4 — The registers and the reports** | The Associate certificate register with its four-month warning, the trading terminal register, and the HR Head's dashboard and exports. | Nobody ever again discovers a certificate expiry by accident, and the real headcount is one click away. |
 
 ### **What it will be built with, in one paragraph**
 

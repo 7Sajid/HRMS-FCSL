@@ -13,7 +13,7 @@ import { prisma, finish } from "./_cli";
  * Fixtures live at the reserved TLD @qa.fcsl.invalid so they can never collide
  * with a real employee, and are deleted BY EXACT ID in a finally — never by a
  * blanket predicate, because a predicate that is slightly wrong on the day
- * somebody runs this against the wrong database deletes real staff files.
+ * somebody runs this against the wrong database deletes real employee files.
  *
  *   npm run dev            (in another terminal)
  *   npx tsx scripts/qa-panel1.ts
@@ -100,7 +100,7 @@ async function main() {
     },
   });
   const employee = await prisma.employee.create({
-    data: { userId: user.id, fullName: "QA Relationship Manager", staffType: "RM" },
+    data: { userId: user.id, fullName: "QA Associate", staffType: "RM" },
   });
 
   try {
@@ -108,7 +108,7 @@ async function main() {
 
     console.log("\nThe locked door");
     let state = await loadOnboardingState(employee);
-    check("an RM is asked for 10 required items", state.progress.total === 10, `got ${state.progress.total}`);
+    check("an Associate is asked for 10 required items", state.progress.total === 10, `got ${state.progress.total}`);
     check("nothing is satisfied yet", state.progress.done === 0);
     check("Submit is refused", !state.canSubmit);
 
@@ -140,7 +140,7 @@ async function main() {
       type: "application/pdf",
     });
     check(
-      "the RM certificate is refused without its two dates",
+      "the Associate certificate is refused without its two dates",
       noDates.status === 400 && /issue date/.test(noDates.body.error ?? ""),
       noDates.body.error,
     );
@@ -201,7 +201,7 @@ async function main() {
     await prisma.employeeBankDetail.create({
       data: {
         employeeId: employee.id,
-        accountName: "QA Relationship Manager",
+        accountName: "QA Associate",
         accountNumber: "1234567890",
         bankName: "Test Bank",
         branchName: "Motijheel",

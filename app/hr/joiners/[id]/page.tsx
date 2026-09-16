@@ -75,7 +75,7 @@ export default async function Page({ params }: Props) {
   return (
     <main className="mx-auto max-w-6xl px-6 py-10">
       <PageHeader
-        eyebrow={`${employee.user.email} · ${employee.staffType === "RM" ? "RM" : "STAFF"}`}
+        eyebrow={`${employee.user.email} · ${employee.staffType === "RM" ? "Associate" : "Executive"}`}
         title={employee.fullName}
         subtitle={state.progress.label}
         actions={

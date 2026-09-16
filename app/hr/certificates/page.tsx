@@ -7,13 +7,13 @@ import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Badge, NoticeBox } from "@/components/ui/Feedback";
 import { TableShell, Tbody, Td, Th, Thead, TableEmpty } from "@/components/ui/Table";
 
-export const metadata = { title: "RM certificates · FCSL HR" };
+export const metadata = { title: "Associate certificates · FCSL HR" };
 
-/** Rule 7. FCSL has fewer than 200 RMs; this is a guard, not a limit. */
+/** Rule 7. FCSL has fewer than 200 Associates; this is a guard, not a limit. */
 const REGISTER_CAP = 1000;
 
 /**
- * §6.8 — "Every RM in the company on one screen, with issue date, expiry date,
+ * §6.8 — "Every Associate in the company on one screen, with issue date, expiry date,
  * and a status that colours itself: green for valid, amber inside four months,
  * red once expired. Sorted so the most urgent sits at the top."
  *
@@ -33,7 +33,7 @@ export default async function Page() {
       orderBy: { expiryDate: "asc" },
       take: REGISTER_CAP,
     }),
-    // An RM with no certificate on file at all is the case the register would
+    // An Associate with no certificate on file at all is the case the register would
     // otherwise never show, because it has no expiry date to sort by.
     prisma.employee.findMany({
       where: {
@@ -63,8 +63,8 @@ export default async function Page() {
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
       <PageHeader
-        title="RM certificates"
-        subtitle="Every RM in the company, most urgent first. The system warns four months ahead — and never blocks anybody."
+        title="Associate certificates"
+        subtitle="Every Associate in the company, most urgent first. The system warns four months ahead — and never blocks anybody."
         actions={
           <a
             href="/api/export?type=certificates"
@@ -84,7 +84,7 @@ export default async function Page() {
 
       {certificates.length < totalActive && (
         // Never silently. A register that quietly stops at a thousand is a
-        // register that says the last RM does not exist.
+        // register that says the last Associate does not exist.
         <div className="mb-6">
           <NoticeBox tone="warn">
             Showing {certificates.length} of {totalActive} active certificates, most urgent first.
@@ -96,7 +96,7 @@ export default async function Page() {
       {rmsWithout.length > 0 && (
         <Card className="mb-6 border-warn-500/50 bg-warn-50/30 p-5">
           <h2 className="text-sm font-medium text-ink-900">
-            {rmsWithout.length} RM{rmsWithout.length === 1 ? " has" : "s have"} no certificate on file
+            {rmsWithout.length} Associate{rmsWithout.length === 1 ? " has" : "s have"} no certificate on file
           </h2>
           <p className="mt-1 text-xs text-ink-500">
             They cannot appear in the countdown below because there is no date to count to.
@@ -130,7 +130,7 @@ export default async function Page() {
         </Thead>
         <Tbody>
           {sorted.length === 0 && (
-            <TableEmpty colSpan={7}>No RM certificates are on the register yet.</TableEmpty>
+            <TableEmpty colSpan={7}>No Associate certificates are on the register yet.</TableEmpty>
           )}
           {sorted.map((certificate) => {
             const status = certificateStatus(certificate, today);

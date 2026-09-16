@@ -39,7 +39,7 @@ export async function recordAssignment(
 ): Promise<SetupResult> {
   const context = await getSessionContext();
   if (!context) return { error: "Please sign in again." };
-  if (!can(context.viewer, "employees.setup")) return { error: "You cannot change staff records." };
+  if (!can(context.viewer, "employees.setup")) return { error: "You cannot change employee records." };
 
   const parsed = schema.safeParse(Object.fromEntries(formData));
   if (!parsed.success) return { error: parsed.error.issues[0]!.message };

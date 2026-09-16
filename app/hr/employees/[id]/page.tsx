@@ -80,7 +80,7 @@ export default async function Page({ params }: Props) {
         subtitle={[employee.designation?.name, employee.branch?.name].filter(Boolean).join(" · ")}
         actions={
           <div className="flex items-center gap-2">
-            {employee.staffType === "RM" && <Badge tone="brand">RM</Badge>}
+            {employee.staffType === "RM" && <Badge tone="brand">Associate</Badge>}
             {employee.status === "ACTIVE" ? (
               <Badge tone="success">Active</Badge>
             ) : (
@@ -201,7 +201,7 @@ export default async function Page({ params }: Props) {
           {employee.staffType === "RM" && (
             <Card className="p-6">
               <div className="mb-3 flex items-center justify-between">
-                <h2 className="text-xs font-semibold tracking-widest text-ink-400">RM CERTIFICATE</h2>
+                <h2 className="text-xs font-semibold tracking-widest text-ink-400">ASSOCIATE CERTIFICATE</h2>
                 <Badge tone={certificate.tone}>{certificate.label}</Badge>
               </div>
               <p className="text-sm text-ink-700">{certificate.sentence}</p>

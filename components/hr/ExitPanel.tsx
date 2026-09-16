@@ -191,7 +191,7 @@ export function ReverseExitButton({
       <NoticeBox tone="warn">
         <p>
           {fullName} goes back to <strong className="font-medium">Active</strong>
-          {wasCompleted ? ", and their RM certificate comes back with them" : ""}. The exit stays on
+          {wasCompleted ? ", and their Associate certificate comes back with them" : ""}. The exit stays on
           the permanent record, marked undone.
         </p>
         <p className="mt-2">

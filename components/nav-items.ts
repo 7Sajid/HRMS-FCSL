@@ -20,7 +20,7 @@ export type NavItem = {
   icon: IconName;
   /** Null means everybody with an open panel. */
   capability: Capability | null;
-  /** Shown only to RMs — the certificate countdown (§5.1). */
+  /** Shown only to Associates — the certificate countdown (§5.1). */
   rmOnly?: boolean;
 };
 
@@ -40,7 +40,7 @@ const SECTIONS: NavSection[] = [
       },
       { label: "Leave & attendance", href: "/me/leave", icon: "calendar", capability: null },
       {
-        label: "My RM certificate",
+        label: "My Associate certificate",
         href: "/me/certificate",
         icon: "certificate",
         capability: null,
@@ -79,7 +79,7 @@ const SECTIONS: NavSection[] = [
       { label: "Joiners", href: "/hr/joiners", icon: "approvals", capability: "documents.approve" },
       { label: "Find anybody", href: "/hr/employees", icon: "team", capability: "employees.readAll" },
       {
-        label: "RM certificates",
+        label: "Associate certificates",
         href: "/hr/certificates",
         icon: "certificate",
         capability: "certificates.manage",
@@ -91,7 +91,7 @@ const SECTIONS: NavSection[] = [
         capability: "attendance.verify",
       },
       { label: "Leavers", href: "/hr/exits", icon: "exit", capability: "exits.record" },
-      { label: "Import staff", href: "/hr/import", icon: "import", capability: "employees.setup" },
+      { label: "Import employees", href: "/hr/import", icon: "import", capability: "employees.setup" },
     ],
   },
   {

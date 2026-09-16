@@ -12,8 +12,8 @@ export type Result = { ok: true } | { error: string };
 /**
  * The "Request a correction" button on page 1 (§5.1).
  *
- * A note to HR, never a direct edit — a staff file that the person it
- * describes can edit is not a staff file.
+ * A note to HR, never a direct edit — an employee file that the person it
+ * describes can edit is not an employee file.
  */
 export async function requestCorrection(_previous: unknown, formData: FormData): Promise<Result> {
   const context = await getSessionContext();

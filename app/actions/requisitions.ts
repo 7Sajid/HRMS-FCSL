@@ -22,7 +22,7 @@ export async function raiseRequisition(
   if (!context?.employee) return { error: "Please sign in again." };
 
   // §6.4, as FCSL amended it on 10 September 2026: managers, department heads
-  // and the HR Head only. Everybody else — employees, RMs, HR Executives — asks
+  // and the HR Head only. Everybody else — employees, Associates, HR Executives — asks
   // their manager, who raises it on their behalf.
   if (!can(context.viewer, "requisitions.raise")) {
     return { error: "Ask your manager to raise this for you." };

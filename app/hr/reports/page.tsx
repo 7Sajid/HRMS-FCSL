@@ -41,7 +41,7 @@ export default async function Page() {
             href="/api/export?type=employees"
             className="rounded-lg border border-ink-300/60 bg-white px-4 py-2.5 text-sm font-medium hover:bg-surface"
           >
-            Export the staff list
+            Export the employee list
           </a>
         }
       />
@@ -51,7 +51,7 @@ export default async function Page() {
         <div className="mb-4 grid gap-3 sm:grid-cols-3 lg:grid-cols-6">
           <Stat label="Active" value={people.active} big />
           <Stat label="Employees" value={people.employees} />
-          <Stat label="RMs" value={people.rms} />
+          <Stat label="Associates" value={people.rms} />
           <Stat label="Managers" value={people.managers} />
           <Stat label="Joined this month" value={people.joinedThisMonth} />
           <Stat
@@ -76,14 +76,14 @@ export default async function Page() {
 
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-ink-900">
-          RM certificates and trading terminals
+          Associate certificates and trading terminals
         </h2>
         <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
           <Stat label="Expired" value={certificates.expired} tone={certificates.expired ? "danger" : "neutral"} />
           <Stat label="Next 3 months" value={certificates.three} tone={certificates.three ? "warn" : "neutral"} />
           <Stat label="Next 12 months" value={certificates.twelve} />
           <Stat
-            label="RMs with none"
+            label="Associates with none"
             value={certificates.withoutCertificate}
             tone={certificates.withoutCertificate ? "warn" : "neutral"}
           />
@@ -217,7 +217,7 @@ export default async function Page() {
           <Tbody>
             {documents.incompleteTotal === 0 && (
               <TableEmpty colSpan={4}>
-                Every active staff file is complete. That is the point of the locked door.
+                Every active employee file is complete. That is the point of the locked door.
               </TableEmpty>
             )}
             {documents.incomplete.slice(0, 25).map((row) => (

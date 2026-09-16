@@ -22,7 +22,7 @@ export type Importer = { userId: string; role: Role; name: string };
  * A cost factor buys resistance to cracking a password a HUMAN chose, offline,
  * at leisure. These are 32 random characters generated, hashed and discarded
  * inside one expression — there is no plaintext anywhere for anybody to crack
- * back to. Imported staff are handed a real temporary password from the
+ * back to. Imported employees are handed a real temporary password from the
  * accounts screen when HR is ready to hand one over, and `mustChangePassword`
  * forces a change even then.
  *
@@ -92,7 +92,7 @@ export async function commitImport(
           fullName: row.fullName,
           mobile: row.mobile,
           staffType: row.staffType,
-          // §12.1: "Existing staff are created directly at Stage 2 — they do
+          // §12.1: "Existing employees are created directly at Stage 2 — they do
           // not go through the locked door, because they are already employed
           // and their files already exist."
           onboardingStatus: "APPROVED" as const,
@@ -142,7 +142,7 @@ export async function commitImport(
           // somebody can read while it is wrong.
           managerId: managerOf(row),
           reason: "IMPORT" as const,
-          note: "Imported from the existing staff spreadsheet",
+          note: "Imported from the existing employee spreadsheet",
           recordedById: actor.userId,
           recordedByName: actorName,
         })),
@@ -184,7 +184,7 @@ export async function commitImport(
         action: "employee.imported",
         actor: actorFrom({ id: actor.userId, fullName: actorName, role: actor.role }),
         targetType: "import",
-        targetLabel: `${toWrite.length} existing staff`,
+        targetLabel: `${toWrite.length} existing employees`,
         detail: {
           rows: toWrite.length,
           skippedAlreadyPresent: options.skipped,

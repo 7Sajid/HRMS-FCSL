@@ -61,7 +61,7 @@ export async function headcount(): Promise<Headcount> {
   ] = await Promise.all([
     prisma.employee.count({ where: { ...approved, status: "ACTIVE" } }),
     prisma.employee.count({ where: { ...approved, status: "LEFT" } }),
-    // §6.6: "split into employees, RMs and managers". A manager is counted as
+    // §6.6: "split into employees, Associates and managers". A manager is counted as
     // a manager rather than twice.
     prisma.employee.count({ where: { ...activeStaff, user: { role: "MANAGER" } } }),
     prisma.employee.count({ where: { ...activeStaff, staffType: "RM", ...notAManager } }),
@@ -70,7 +70,7 @@ export async function headcount(): Promise<Headcount> {
     prisma.employee.count({
       where: { ...approved, status: "LEFT", lastWorkingDay: { gte: monthStart } },
     }),
-    // One pass gives both the branch total and the RM count within it.
+    // One pass gives both the branch total and the Associate count within it.
     prisma.employee.groupBy({
       by: ["branchId", "staffType"],
       where: activeStaff,

@@ -8,12 +8,12 @@ const HEADERS = [
   "Mobile",
   "Joining date",
   "Role",
-  "Staff or RM",
+  "Executive or Associate",
 ];
 
 const good = [
-  ["A 001 - 19 - 70", "Rahim Uddin", "rahim@fcslbd.com", "01712345678", "2019-03-01", "MANAGER", "STAFF"],
-  ["A 002 - 19 - 70", "Karim Hossain", "karim@fcslbd.com", "01812345678", "2019-06-15", "EMPLOYEE", "RM"],
+  ["A 001 - 19 - 70", "Rahim Uddin", "rahim@fcslbd.com", "01712345678", "2019-03-01", "MANAGER", "EXECUTIVE"],
+  ["A 002 - 19 - 70", "Karim Hossain", "karim@fcslbd.com", "01812345678", "2019-06-15", "EMPLOYEE", "ASSOCIATE"],
 ];
 
 const check = (rows: string[][], headers = HEADERS) =>
@@ -29,11 +29,42 @@ describe("a clean file passes", () => {
   });
 
   it("matches headers however they are punctuated or cased", () => {
-    const odd = ["employee_id", "FULL NAME", "E-mail", "mobile", "joining date", "role", "staff or rm"];
-    expect(check(good, odd).problems).toEqual([]);
+    const odd = [
+      "employee_id", "FULL NAME", "E-mail", "mobile", "joining date", "role", "executive or associate",
+    ];
+    const result = check(good, odd);
+    expect(result.problems).toEqual([]);
+    expect(result.unknownColumns).toEqual([]);
+    expect(result.rows[1]!.staffType).toBe("RM");
   });
 
-  it("defaults role and staff type when the columns are absent", () => {
+  // A sheet drafted before the 16 September 2026 rename, header and values.
+  // The column must still be recognised: an unknown header is reported but the
+  // column falls back to its default, which would turn every Associate into an
+  // executive without failing a single row.
+  it("still understands the old Staff or RM column and its words", () => {
+    const old = ["Employee ID", "Full name", "Email", "Mobile", "Joining date", "Role", "Staff or RM"];
+    const rows = [
+      ["A 001 - 19 - 70", "Rahim Uddin", "rahim@fcslbd.com", "01712345678", "2019-03-01", "MANAGER", "STAFF"],
+      ["A 002 - 19 - 70", "Karim Hossain", "karim@fcslbd.com", "01812345678", "2019-06-15", "EMPLOYEE", "RM"],
+    ];
+    const result = check(rows, old);
+    expect(result.problems).toEqual([]);
+    expect(result.unknownColumns).toEqual([]);
+    expect(result.rows[0]!.staffType).toBe("STAFF");
+    expect(result.rows[1]!.staffType).toBe("RM");
+  });
+
+  it("refuses a word that is neither", () => {
+    const rows = [
+      ["A 001 - 19 - 70", "Rahim Uddin", "rahim@fcslbd.com", "01712345678", "2019-03-01", "MANAGER", "PARTNER"],
+    ];
+    expect(check(rows).problems).toEqual([
+      { row: 2, column: "Executive or Associate", message: '"PARTNER" must be EXECUTIVE or ASSOCIATE.' },
+    ]);
+  });
+
+  it("defaults role and person type when the columns are absent", () => {
     const minimal = ["Employee ID", "Full name", "Email", "Joining date"];
     const result = check([["A 003 - 20 - 70", "Salma Begum", "salma@fcslbd.com", "2020-01-05"]], minimal);
     expect(result.problems).toEqual([]);
@@ -103,14 +134,14 @@ describe("the checks that catch a real typo", () => {
   });
 });
 
-describe("RM certificates in the import", () => {
+describe("Associate certificates in the import", () => {
   const withCert = [
     "Employee ID",
     "Full name",
     "Email",
     "Joining date",
-    "Staff or RM",
-    "RM certificate number",
+    "Executive or Associate",
+    "Associate certificate number",
     "Certificate issued",
     "Certificate expires",
   ];

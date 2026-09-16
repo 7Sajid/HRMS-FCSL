@@ -18,7 +18,7 @@ type Props = {
 };
 
 /**
- * §5.3 page 6 — "One searchable list of every employee, RM and manager, with
+ * §5.3 page 6 — "One searchable list of every employee, Associate and manager, with
  * filters down the side."
  *
  * The export is recorded, because "a list of every employee's details leaving
@@ -136,7 +136,7 @@ export default async function Page({ searchParams }: Props) {
                     </Link>
                     {row.staffType === "RM" && (
                       <span className="ml-2">
-                        <Badge tone="brand">RM</Badge>
+                        <Badge tone="brand">Associate</Badge>
                       </span>
                     )}
                   </Td>

@@ -228,7 +228,7 @@ async function main() {
     const finalBalance = (await leaveTypesFor(staff.employee, calendarDate(2026, 6, 1))).find((t) => t.code === "CASUAL")!;
     check("three days have come off the balance", finalBalance.balance.taken === 3, String(finalBalance.balance.taken));
     check("and nothing is left pending", finalBalance.balance.pending === 0);
-    // Staff joined 1 January 2026 and are on probation: casual leave is FCSL's
+    // The executive joined 1 January 2026 and is on probation: casual leave is FCSL's
     // 6-day advance, out of their first permanent year.
     check("three remain of six", finalBalance.balance.available === 3, String(finalBalance.balance.available));
 

@@ -6,7 +6,7 @@ import type { RequisitionType } from "@prisma/client";
  * "The form changes to suit the type chosen, but the journey afterwards is the
  * same for all of them, which is why it is one feature and not four."
  *
- * Raised by managers, HR and the Super Admin only. Employees and RMs ask their
+ * Raised by managers, HR and the Super Admin only. Employees and Associates ask their
  * manager, who raises it on their behalf — so every requisition already has a
  * manager behind it before it reaches HR.
  */
@@ -81,7 +81,7 @@ export const REQUISITION_TYPES: readonly RequisitionSpec[] = [
   },
   {
     type: "NEW_STAFF",
-    label: "A request for new staff",
+    label: "A request for new employees",
     endsWith: "HR opens recruitment outside this system.",
     hasAmount: true,
     allowsAttachment: false,

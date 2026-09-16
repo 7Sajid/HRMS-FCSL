@@ -5,13 +5,13 @@ import type { SniffedType } from "./uploads";
  * Shrinking what people upload (§6.1).
  *
  * Nothing here changes what a document IS. It changes how many bytes it takes
- * to say it, and it is the difference between a staff file costing a few
+ * to say it, and it is the difference between an employee file costing a few
  * gigabytes and costing a hundred: nothing shrank anything, so a phone
  * photograph of a national ID arrived at six or eight megabytes and was stored
  * at six or eight megabytes, when three hundred kilobytes reads identically.
  *
  * The rule this is written around: THE DOCUMENT MUST STAY READABLE. This is a
- * regulated staff file and the point of an NID scan is the number on it. So
+ * regulated employee file and the point of an NID scan is the number on it. So
  * the settings below are deliberately conservative — 2,000 pixels on the long
  * edge is an A4 page at about 170 dots per inch, better than most photocopies
  * anybody files on paper, and quality 82 is where JPEG stops being visibly

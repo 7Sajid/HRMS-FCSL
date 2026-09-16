@@ -17,7 +17,7 @@ const SECURITY_HEADERS = [
     value: "max-age=63072000; includeSubDomains",
   },
   {
-    // Nothing in a staff record belongs inside somebody else's page. Without
+    // Nothing in an employee record belongs inside somebody else's page. Without
     // this, a framed sign-in form is a working credential harvester.
     key: "X-Frame-Options",
     value: "DENY",

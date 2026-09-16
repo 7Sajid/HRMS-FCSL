@@ -16,7 +16,7 @@ import type { Instrumentation } from "next";
  * NOT written to AuditEvent. That table is the record of what people did, it
  * is append-only for ever, and a retry storm would bury a year of decisions
  * under stack traces. What the software got wrong is a different question from
- * what the staff did.
+ * what the employee did.
  */
 
 const MARKER = "[fcsl-hrm:error]";

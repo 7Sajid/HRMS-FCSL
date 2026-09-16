@@ -9,7 +9,7 @@ import { Select, Textarea } from "@/components/ui/Field";
 import { ErrorBox } from "@/components/ui/Feedback";
 
 const ROLES: { value: Role; label: string }[] = [
-  { value: "EMPLOYEE", label: "Employee" },
+  { value: "EMPLOYEE", label: "Executive" },
   { value: "MANAGER", label: "Manager" },
   { value: "HR_EXECUTIVE", label: "HR Executive" },
   { value: "HR_HEAD", label: "HR Head" },

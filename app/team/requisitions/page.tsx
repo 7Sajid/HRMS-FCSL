@@ -45,7 +45,7 @@ export default async function Page() {
     <main className="mx-auto max-w-5xl px-6 py-10">
       <PageHeader
         title="Requisitions"
-        subtitle="Ask the company for supplies, equipment, money or new staff — and watch it move."
+        subtitle="Ask the company for supplies, equipment, money or new employees — and watch it move."
       />
 
       <Card className="mb-8 p-6">

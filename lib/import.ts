@@ -2,11 +2,11 @@ import { parseEmployeeId } from "./employee-id";
 import { fromISODate } from "./dates";
 
 /**
- * The bulk import of FCSL's 412 existing staff (§12.1).
+ * The bulk import of FCSL's 412 existing employees (§12.1).
  *
  * "There is a bulk import screen that takes a spreadsheet, checks every row
  * before saving anything, and reports exactly which rows have a problem and
- * why. Existing staff are created directly at Stage 2 — they do not go through
+ * why. Existing employees are created directly at Stage 2 — they do not go through
  * the locked door, because they are already employed and their files already
  * exist."
  *
@@ -33,21 +33,35 @@ export const IMPORT_COLUMNS: readonly ImportColumn[] = [
   { key: "mobile", header: "Mobile", required: false, note: "01712345678" },
   { key: "joiningDate", header: "Joining date", required: true, note: "YYYY-MM-DD" },
   { key: "role", header: "Role", required: false, note: "EMPLOYEE, MANAGER, HR_EXECUTIVE…" },
-  { key: "staffType", header: "Staff or RM", required: false, note: "STAFF or RM" },
+  { key: "staffType", header: "Executive or Associate", required: false, note: "EXECUTIVE or ASSOCIATE" },
   { key: "branch", header: "Branch", required: false, note: "Branch name or code" },
   { key: "department", header: "Department", required: false, note: "" },
   { key: "designation", header: "Designation", required: false, note: "" },
   { key: "grade", header: "Grade", required: false, note: "" },
   { key: "manager", header: "Reports to", required: false, note: "Their manager's employee ID" },
   { key: "confirmationDate", header: "Confirmation date", required: false, note: "YYYY-MM-DD" },
-  { key: "certificateNumber", header: "RM certificate number", required: false, note: "RMs only" },
+  { key: "certificateNumber", header: "Associate certificate number", required: false, note: "Associates only" },
   { key: "certificateIssue", header: "Certificate issued", required: false, note: "YYYY-MM-DD" },
   { key: "certificateExpiry", header: "Certificate expires", required: false, note: "YYYY-MM-DD" },
 ];
 
-const BY_NORMALISED = new Map(
-  IMPORT_COLUMNS.map((c) => [normalise(c.header), c.key]),
-);
+/**
+ * The headers FCSL used before the 16 September 2026 rename, still accepted.
+ *
+ * Not politeness. An unrecognised header is reported, but the column it should
+ * have filled falls back to its default, so a sheet drafted against the old
+ * template would import every Associate as an executive — 412 rows that look
+ * right and are wrong, including BSEC licence holders nobody is then watching.
+ */
+const LEGACY_HEADERS: Record<string, string> = {
+  "Staff or RM": "staffType",
+  "RM certificate number": "certificateNumber",
+};
+
+const BY_NORMALISED = new Map([
+  ...IMPORT_COLUMNS.map((c) => [normalise(c.header), c.key] as const),
+  ...Object.entries(LEGACY_HEADERS).map(([header, key]) => [normalise(header), key] as const),
+]);
 
 function normalise(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -154,10 +168,15 @@ export function checkImport(headers: string[], raw: RawRow[]): ImportCheck {
     const role = (get("role") || "EMPLOYEE").toUpperCase();
     if (!ROLES.includes(role)) fail("Role", `"${role}" is not one of ${ROLES.join(", ")}.`);
 
-    const staffTypeRaw = (get("staffType") || "STAFF").toUpperCase();
-    const staffType = staffTypeRaw === "RM" ? "RM" : "STAFF";
-    if (!["STAFF", "RM"].includes(staffTypeRaw)) {
-      fail("Staff or RM", `"${staffTypeRaw}" must be STAFF or RM.`);
+    // FCSL renamed the two kinds of person on 16 September 2026 — executive and
+    // Associate — but the values stored in the database did not change, because
+    // renaming an enum in place rewrites every existing row for a difference
+    // nobody can see. The old spellings are still accepted, so a spreadsheet
+    // prepared before the rename imports rather than failing on all 412 lines.
+    const staffTypeRaw = (get("staffType") || "EXECUTIVE").toUpperCase();
+    const staffType = staffTypeRaw === "ASSOCIATE" || staffTypeRaw === "RM" ? "RM" : "STAFF";
+    if (!["EXECUTIVE", "ASSOCIATE", "STAFF", "RM"].includes(staffTypeRaw)) {
+      fail("Executive or Associate", `"${staffTypeRaw}" must be EXECUTIVE or ASSOCIATE.`);
     }
 
     const mobile = get("mobile");
@@ -173,7 +192,7 @@ export function checkImport(headers: string[], raw: RawRow[]): ImportCheck {
       fail("Certificate expires", "The expiry is not after the issue date.");
     }
     if (staffType === "RM" && get("certificateNumber") && !certificateExpiry) {
-      fail("Certificate expires", "An RM certificate needs an expiry date to be tracked.");
+      fail("Certificate expires", "An Associate certificate needs an expiry date to be tracked.");
     }
 
     rows.push({

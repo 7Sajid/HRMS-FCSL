@@ -39,7 +39,7 @@ You are required to explain, in writing and within three working days of receivi
     name: "Conduct with a client",
     body: `A complaint has been received concerning your conduct with a client on [DATE].
 
-As a licensed intermediary, FCSL's standing with BSEC and with its clients rests on the conduct of every member of staff who deals with them.
+As a licensed intermediary, FCSL's standing with BSEC and with its clients rests on the conduct of every employee who deals with them.
 
 You are required to explain, in writing and within three working days of receiving this letter, your account of what happened.`,
   },

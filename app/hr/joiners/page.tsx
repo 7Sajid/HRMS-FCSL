@@ -81,7 +81,7 @@ export default async function Page() {
                     <div className="flex flex-wrap items-center gap-2">
                       <p className="text-sm font-medium text-ink-900">{person.fullName}</p>
                       <Badge tone={person.staffType === "RM" ? "brand" : "neutral"}>
-                        {person.staffType === "RM" ? "RM" : "Staff"}
+                        {person.staffType === "RM" ? "Associate" : "Executive"}
                       </Badge>
                       {overdue && (
                         <Badge tone="warn">

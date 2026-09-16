@@ -1,7 +1,7 @@
 import { addDays, daysBetween, humanDaysUntil, todayInDhaka } from "./dates";
 
 /**
- * The RM certificate countdown (§5.1, §6.8, §12.2).
+ * The Associate certificate countdown (§5.1, §6.8, §12.2).
  *
  * The status is DERIVED from the expiry date every time it is asked for, and
  * never stored. A stored status needs something to keep it true, and that
@@ -45,7 +45,7 @@ export function certificateStatus(
       state: "NONE",
       label: "Not recorded",
       tone: "neutral",
-      sentence: "No RM certificate is on file yet.",
+      sentence: "No Associate certificate is on file yet.",
       daysRemaining: null,
     };
   }

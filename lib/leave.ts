@@ -23,7 +23,7 @@ import { addDays, addYears, calendarDate, dayKind, eachDate, formatDate, toISODa
 // 2026. It replaced a calendar year, which needed a pro-rating rule for every
 // joiner's first January; a year that starts when the person does needs none.
 //
-// Somebody with no joining date on record — never true of approved staff, but
+// Somebody with no joining date on record — never true of approved employees, but
 // the column is nullable — falls back to the calendar year rather than to no
 // year at all.
 // ---------------------------------------------------------------------------

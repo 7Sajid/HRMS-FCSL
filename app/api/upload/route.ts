@@ -75,7 +75,7 @@ export async function POST(request: Request): Promise<Response> {
     }
   }
 
-  // The RM certificate carries its two dates (§4 step 3). They drive the
+  // The Associate certificate carries its two dates (§4 step 3). They drive the
   // four-month warning, so they are captured with the file, not later.
   //
   // Checked BEFORE anything is written. Validating after the upload leaves a
@@ -98,7 +98,7 @@ export async function POST(request: Request): Promise<Response> {
 
   // Shrunk before anything is written. A phone photograph of a national ID
   // arrives at six or eight megabytes and reads identically at three hundred
-  // kilobytes; over four hundred staff that is the difference between a few
+  // kilobytes; over four hundred employees that is the difference between a few
   // gigabytes of storage and a hundred. PDFs pass through untouched, and an
   // image that cannot be read or would only get bigger is kept exactly as it
   // came — see lib/images.ts.

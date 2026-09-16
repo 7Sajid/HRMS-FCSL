@@ -119,7 +119,7 @@ export default async function Page({ params }: Props) {
 
           {employee.certificates.length > 0 && !exit.reversedAt && (
             <NoticeBox tone="brand">
-              Their RM certificate will be surrendered when you finish the exit, and they drop out of
+              Their Associate certificate will be surrendered when you finish the exit, and they drop out of
               the expiry register.
             </NoticeBox>
           )}

@@ -61,11 +61,11 @@ export function EmployeeFilters({
       <Picker label="Grade" name="grade" options={options.grades} current={current} onChange={setFilter} />
       <Picker label="Reports to" name="manager" options={options.managers} current={current} onChange={setFilter} />
 
-      <Field label="Staff or RM" htmlFor="type">
+      <Field label="Executive or Associate" htmlFor="type">
         <Select id="type" value={current.type ?? ""} onChange={(e) => setFilter("type", e.target.value)}>
           <option value="">Everybody</option>
-          <option value="STAFF">Staff</option>
-          <option value="RM">Relationship Manager</option>
+          <option value="STAFF">Executive</option>
+          <option value="RM">Associate</option>
         </Select>
       </Field>
 

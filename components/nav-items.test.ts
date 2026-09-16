@@ -17,10 +17,10 @@ describe("the menu each panel gets", () => {
     ]);
   });
 
-  it("adds the certificate countdown for an RM, and only for an RM", () => {
+  it("adds the certificate countdown for an Associate, and only for an Associate", () => {
     expect(hrefs("EMPLOYEE", true)).toContain("/me/certificate");
     expect(hrefs("EMPLOYEE", false)).not.toContain("/me/certificate");
-    // It is not a role — a manager who is not an RM does not get it either.
+    // It is not a role — a manager who is not an Associate does not get it either.
     expect(hrefs("MANAGER", false)).not.toContain("/me/certificate");
   });
 

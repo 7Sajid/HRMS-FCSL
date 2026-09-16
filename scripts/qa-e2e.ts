@@ -42,7 +42,7 @@ import { addDays, calendarDate, daysInMonth, todayInDhaka, toISODate } from "../
  * exit that completes while a terminal is still out, a certificate register
  * and a terminal register that each look right and disagree with each other.
  *
- * It walks one RM from an empty account to a completed exit, and everything
+ * It walks one Associate from an empty account to a completed exit, and everything
  * it touches goes through the real functions — the same ones the screens
  * call. Nothing is staged and then checked against its own staging.
  */
@@ -147,7 +147,7 @@ async function main() {
     check("the five kinds of user exist, with a branch manager", madeUsers.length === 4);
 
     // =======================================================================
-    section("2 · A new RM arrives at the locked door (§3, §4)");
+    section("2 · A new Associate arrives at the locked door (§3, §4)");
 
     const rm = await makeAccount("E2E Karim", "EMPLOYEE", "RM", boss.employee.id);
     check("their account carries a temporary password that expires", rm.user.tempPasswordExpiresAt !== null);
@@ -158,11 +158,11 @@ async function main() {
     const rmRequired = requiredKinds("RM");
     const staffRequired = requiredKinds("STAFF");
     check(
-      "an RM's list demands more than a plain employee's",
+      "an Associate's list demands more than a plain employee's",
       rmRequired.length > staffRequired.length,
-      `RM ${rmRequired.length} vs staff ${staffRequired.length}`,
+      `Associate ${rmRequired.length} vs executive ${staffRequired.length}`,
     );
-    check("and it includes the RM certificate", rmRequired.includes("RM_CERTIFICATE"));
+    check("and it includes the Associate certificate", rmRequired.includes("RM_CERTIFICATE"));
     check("which a plain employee is never asked for", !staffRequired.includes("RM_CERTIFICATE"));
 
     const emptyState = await loadOnboardingState(rm.employee);
@@ -335,7 +335,7 @@ async function main() {
     check("the door is open", opened.onboardingStatus === "APPROVED");
 
     // =======================================================================
-    section("4 · The RM certificate register (§6.8)");
+    section("4 · The Associate certificate register (§6.8)");
 
     const certDoc = await prisma.employeeDocument.findFirstOrThrow({
       where: { employeeId: rm.employee.id, kind: "RM_CERTIFICATE", supersededAt: null },
@@ -815,7 +815,7 @@ async function main() {
       JSON.stringify(mineInReport),
     );
     check(
-      "and the RM is no longer in the took-none list",
+      "and the Associate is no longer in the took-none list",
       !leaveRows.tookNone.some((p) => p.id === rm.employee.id),
     );
 

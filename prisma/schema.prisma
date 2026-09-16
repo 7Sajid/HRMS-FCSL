@@ -46,8 +46,8 @@ datasource db {
 // Identity and access
 // ===========================================================================
 
-/// The five kinds of user (§2). RM is deliberately NOT here — see
-/// Employee.staffType. An RM uses exactly the same screens as any employee.
+/// The five kinds of user (§2). Associate is deliberately NOT here — see
+/// Employee.staffType. An Associate uses exactly the same screens as any employee.
 enum Role {
   SUPER_ADMIN
   HR_HEAD
@@ -127,8 +127,16 @@ model LoginAttempt {
 // The person
 // ===========================================================================
 
-/// STAFF or RM. This is not a permission — it decides which documents are
-/// demanded at the locked door (§4) and whether a BSEC certificate is tracked.
+/// Executive or Associate. This is not a permission — it decides which
+/// documents are demanded at the locked door (§4) and whether a BSEC
+/// certificate is tracked.
+///
+/// The stored words are the old ones. FCSL renamed these on 16 September 2026
+/// — STAFF is shown as "Executive", RM as "Associate" — and the enum was left
+/// alone deliberately: renaming it rewrites every employee row, every audit
+/// detail that mentions it and every saved export, for a difference nobody can
+/// see. The translation lives at the edges. See CLAUDE.md, "The words on
+/// screen are not the words in the database".
 enum StaffType {
   STAFF
   RM
@@ -386,7 +394,7 @@ model CorrectionRequest {
 /// The document catalogue (§4). A closed set, because the list is fixed by the
 /// specification and a typo in a free-text kind would quietly create a
 /// requirement nobody can satisfy. lib/documents.ts holds the labels and the
-/// required/optional rules per staff type.
+/// required/optional rules per kind of person.
 enum DocumentKind {
   CV
   NID
@@ -436,7 +444,7 @@ model EmployeeDocument {
   status          DocumentStatus @default(PENDING)
   rejectionReason String         @default("")
 
-  /// RM certificate only (§4 step 3, §6.8).
+  /// Associate certificate only (§4 step 3, §6.8).
   issueDate  DateTime? @db.Date
   expiryDate DateTime? @db.Date
 
@@ -616,7 +624,7 @@ enum TerminalStatus {
 /// §6.9. This register lives in the HR system rather than with IT because a
 /// terminal is tied to a person, and that person's right to use it depends on
 /// their certificate being valid and their still being employed. Next to the
-/// certificate register and the staff list, the system can answer by itself:
+/// certificate register and the employee list, the system can answer by itself:
 /// is anybody holding an active terminal whose certificate has expired, or who
 /// has already left? That is what a BSEC inspection asks.
 model TradingTerminal {
@@ -1063,7 +1071,7 @@ enum RequisitionStatus {
   FULFILLED
 }
 
-/// Raised by managers, HR and the Super Admin only (§6.4). Employees and RMs
+/// Raised by managers, HR and the Super Admin only (§6.4). Employees and Associates
 /// ask their manager, who raises it on their behalf.
 model Requisition {
   id           String   @id @default(cuid())

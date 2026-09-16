@@ -309,7 +309,7 @@ export async function reverseExit(employeeId: string, reason: string): Promise<E
   if (employee.exit.reversedAt) return { error: "This exit has already been undone." };
   if (employee.exit.documentsPurgedAt) {
     // §12.2 removed the files a year after the last working day. Putting the
-    // person back would leave a staff file that cannot be completed, and
+    // person back would leave an employee file that cannot be completed, and
     // pretending otherwise is worse than refusing.
     return {
       error:
@@ -338,8 +338,8 @@ export async function reverseExit(employeeId: string, reason: string): Promise<E
     });
 
     // The certificate was surrendered when the exit completed, which dropped
-    // them out of the expiry register. An RM coming back with no certificate
-    // is an RM nobody is watching.
+    // them out of the expiry register. An Associate coming back with no certificate
+    // is an Associate nobody is watching.
     for (const certificate of employee.certificates) {
       if (certificate.surrenderedOn?.getTime() !== lastWorkingDay.getTime()) continue;
       await tx.rmCertificate.update({

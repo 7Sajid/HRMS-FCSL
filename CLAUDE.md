@@ -12,7 +12,17 @@ It is **not** the FCSL Client's Portal. That is separate software with its own r
 
 `SUPER_ADMIN` · `HR_HEAD` · `HR_EXECUTIVE` · `MANAGER` · `EMPLOYEE`.
 
-**RM is not a role.** A Relationship Manager — also called an Authorised Representative — uses exactly the same screens as any other employee. They are `Employee.staffType = "RM"`, which demands a stricter document list and attaches a BSEC certificate whose expiry the system watches. Say **RM**, not AR. The licence is the **RM certificate**.
+**Associate is not a role.** An Associate — the person BSEC licenses as an Authorised Representative — uses exactly the same screens as any other employee. They are `Employee.staffType = "RM"`, which demands a stricter document list and attaches a BSEC certificate whose expiry the system watches. Say **Associate**, never RM or AR. The licence is the **Associate certificate**.
+
+**The words on screen are not the words in the database** (FCSL, 16 September 2026). FCSL renamed two things and neither rename reached the schema, because renaming an enum in place rewrites every row for a difference nobody can see:
+
+| On screen | Stored as |
+|---|---|
+| Executive | `Employee.staffType = "STAFF"` |
+| Associate | `Employee.staffType = "RM"` |
+| Executive (the role) | `Role.EMPLOYEE` |
+
+So `StaffType`, `RmCertificate`, `RM_CERTIFICATE` and `staffType` keep their names in code, and the translation happens at the edges: `ROLE_LABELS`, the screens, the CSV export, and the importer — which accepts *Executive* and *Associate* as well as the older *STAFF* and *RM*, so a spreadsheet drafted against the old template still lands correctly. The general word for everybody is **employee**; an Associate is an employee who is not an executive.
 
 A person can be more than one thing at once: a Branch Manager is also an employee who takes leave. So each person carries one job title plus a set of powers, never a single box.
 
@@ -35,7 +45,7 @@ When an account is created the person can do exactly one thing: upload their doc
 
 This is a **lock, not a hidden menu**. Hiding a nav item stops an ordinary user; it does not stop anyone determined, and an auditor will ask which of the two you built. Every page guards itself.
 
-The 412 staff imported from the existing spreadsheet enter directly at Stage 2 — they are already employed and their files already exist.
+The 412 employees imported from the existing spreadsheet enter directly at Stage 2 — they are already employed and their files already exist.
 
 ## The leave chain (§7.1)
 
@@ -43,7 +53,7 @@ Every leave application in the company ends at the Super Admin.
 
 | Who applies | Step 1 | Step 2 | Step 3 |
 |---|---|---|---|
-| Employee / RM | Manager | HR Head | Super Admin |
+| Executive / Associate | Manager | HR Head | Super Admin |
 | Manager | HR Head | Super Admin | — |
 | HR Executive | HR Head | Super Admin | — |
 | HR Head | Super Admin | — | — |
@@ -62,9 +72,9 @@ Three rules, and they are the part most likely to cause an argument later:
 - **Each person's leave year runs from their joining date**, not 1 January (FCSL, 10 September 2026).
 - **Probation** is the first year, or until HR's confirmation date. Casual and sick leave can be taken during it, but the days come out of the first permanent year — one bucket whose window runs from the joining date to the end of that year. Earned leave opens when probation ends. Which type does which is `LeaveType.probation`, the HR Head's setting.
 - Employee ID is **`A XXX - YY - 70`**. `XXX` never resets and is never reused. The letter advances at 999. `YY` is the joining year. `70` is constant. The highest existing is `A 412 - 26 - 70`.
-- The RM certificate warns **four months** before expiry and **never blocks** the person or their work.
+- The Associate certificate warns **four months** before expiry and **never blocks** the person or their work.
 - Documents are purged one year after the last working day; **the employee record is kept permanently** so headcount reports stay correct.
-- Requisitions are raised by **managers, department heads and the HR Head only** (FCSL, 10 September 2026). Employees, RMs and HR Executives ask their manager. The HR Head's own requisition goes straight to the Super Admin.
+- Requisitions are raised by **managers, department heads and the HR Head only** (FCSL, 10 September 2026). Executives, Associates and HR Executives ask their manager. The HR Head's own requisition goes straight to the Super Admin.
 - **"My team" is for managers, department heads and the HR Head.** The HR Executive and the Super Admin have no team section (FCSL, 10 September 2026).
 - **The permanent record (`/admin/audit`) is the Super Admin's alone.** The HR Head does not read it (FCSL, 10 September 2026).
 - **Out of scope:** payroll, recruitment, appraisal, personal-trading surveillance, punch machines, SMS, Bangla, a mobile app, and any connection to the back office.
@@ -92,7 +102,7 @@ And one that is absolute: **nobody at any level can read somebody else's private
 
 ## Build order
 
-Foundation first, then one panel at a time, bottom-up: **Employee/RM → Manager → HR Executive → HR Head → Super Admin**. Each panel is finished and deployed before the next begins.
+Foundation first, then one panel at a time, bottom-up: **Executive/Associate → Manager → HR Executive → HR Head → Super Admin**. Each panel is finished and deployed before the next begins.
 
 Accounts and the locked door are HR Executive jobs that only arrive at Panel 3, so `scripts/create-account.ts` and `scripts/approve-joiner.ts` do them from the terminal until then. Those scripts are permanent ops tools, not scaffolding — they are how you recover when a screen is broken at nine in the evening. `scripts/run-job.ts` joins them at Panel 5: it runs any scheduled job by hand, and `--on YYYY-MM-DD` moves the date the job *thinks* it is, so the certificate ladder can be checked without waiting four months for it.
 
@@ -126,11 +136,11 @@ export PATH="/opt/homebrew/opt/postgresql@17/bin:$PATH"
 psql -d fcsl_hrm
 ```
 
-`fcsl_hrm` is the development database, `fcsl_hrm_test` is for the QA scripts. Both are local and hold no real staff data.
+`fcsl_hrm` is the development database, `fcsl_hrm_test` is for the QA scripts. Both are local and hold no real employee data.
 
 **`prisma migrate reset` asks for explicit human consent** and will not run unattended. That is correct — it drops every table — but it means a schema change during development is applied with `npm run db:migrate`, not by resetting.
 
-Production is Supabase project `FCSL-HRM-Application` in **ap-south-1 (Mumbai)**, with Vercel pinned to `bom1` to sit beside it — the two must match, and Singapore was the original guess before the project existed. Cloud hosting was deferred during the build: the Supabase free tier pauses a project after seven days idle and caps storage at 1 GB, which the 412 staff files would exceed. The decision was to build locally and move to Supabase Pro before go-live. Nothing in the code changes — `lib/storage.ts` already addresses files by key and falls back to a local folder when Supabase is not configured.
+Production is Supabase project `FCSL-HRM-Application` in **ap-south-1 (Mumbai)**, with Vercel pinned to `bom1` to sit beside it — the two must match, and Singapore was the original guess before the project existed. Cloud hosting was deferred during the build: the Supabase free tier pauses a project after seven days idle and caps storage at 1 GB, which the 412 employees' files would exceed. The decision was to build locally and move to Supabase Pro before go-live. Nothing in the code changes — `lib/storage.ts` already addresses files by key and falls back to a local folder when Supabase is not configured.
 
 <!-- BEGIN:nextjs-agent-rules -->
 
