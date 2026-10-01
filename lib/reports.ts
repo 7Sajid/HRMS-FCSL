@@ -416,3 +416,246 @@ export async function attendanceReport(year: number, month: number): Promise<Att
       .sort((a, b) => a.rate - b.rate),
   };
 }
+
+// ---------------------------------------------------------------------------
+// The Super Admin's month (FCSL, 2 October 2026)
+// ---------------------------------------------------------------------------
+
+/**
+ * "How many people took leave this month, how many is paid, how many is unpaid,
+ * ratio against 30 days" — FCSL, 2 October 2026, and his screen alone
+ * (`reports.monthlySummary`).
+ *
+ * Read one month at a time, for the whole company or filtered to a division, a
+ * branch, a department or one person. The division comes from the branch, since
+ * FCSL's divisions contain branches rather than people.
+ *
+ * The ratio divides by PERSON-DAYS — headcount times the days in the month, the
+ * "against 30 days" FCSL asked for, using the month's real length so February
+ * is not quietly flattered. Working days are deliberately not the denominator:
+ * it is the figure FCSL asked for, and it does not move when a public holiday is
+ * entered late.
+ */
+export type SummaryScope =
+  | { kind: "company" }
+  | { kind: "division"; id: string }
+  | { kind: "branch"; id: string }
+  | { kind: "department"; id: string }
+  | { kind: "employee"; id: string };
+
+export type MonthlySummary = {
+  month: { year: number; month: number; days: number };
+  headcount: number;
+  personDays: number;
+  /** How many people took any leave at all, and how many took none. */
+  tookLeave: number;
+  tookNone: number;
+  leaveDays: number;
+  leaveRatio: number;
+  paid: { people: number; days: number };
+  unpaid: { people: number; days: number };
+  byType: { name: string; days: number; people: number }[];
+  /** "9 people had 1 day, 3 people had 4 days" — FCSL's own example. */
+  distribution: { days: number; people: number }[];
+  absence: { days: number; people: number; ratio: number };
+  /** Whether every open branch has published, and which have not. */
+  closed: boolean;
+  awaiting: string[];
+  publishedBranches: number;
+  openBranches: number;
+  /** Per person, worst first. Capped — rule 7. */
+  people: {
+    id: string;
+    name: string;
+    employeeId: string | null;
+    branch: string;
+    department: string;
+    days: number;
+    paidDays: number;
+    unpaidDays: number;
+    ratio: number;
+  }[];
+  peopleTotal: number;
+};
+
+/** Rule 7: a month of 412 people is a list, so it is capped and counted. */
+const SUMMARY_PEOPLE_LIMIT = 200;
+
+export async function monthlySummary(
+  year: number,
+  month: number,
+  scope: SummaryScope = { kind: "company" },
+): Promise<MonthlySummary> {
+  // Month boundaries in Asia/Dhaka terms. LeaveDay.date and AttendanceSheet are
+  // calendar dates, so UTC midnights are the right comparison.
+  const days = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const from = new Date(Date.UTC(year, month - 1, 1));
+  const to = new Date(Date.UTC(year, month - 1, days));
+
+  // Who counts. Only people whose panel is open: somebody still behind the
+  // locked door has no month to report on.
+  const employeeWhere = {
+    status: "ACTIVE" as const,
+    onboardingStatus: "APPROVED" as const,
+    ...(scope.kind === "employee" ? { id: scope.id } : {}),
+    ...(scope.kind === "branch" ? { branchId: scope.id } : {}),
+    ...(scope.kind === "department" ? { departmentId: scope.id } : {}),
+    ...(scope.kind === "division" ? { branch: { divisionId: scope.id } } : {}),
+  };
+
+  const people = await prisma.employee.findMany({
+    where: employeeWhere,
+    select: {
+      id: true,
+      fullName: true,
+      employeeId: true,
+      branch: { select: { name: true } },
+      department: { select: { name: true } },
+    },
+    orderBy: { fullName: "asc" },
+  });
+  const inScope = new Set(people.map((p) => p.id));
+  const headcount = people.length;
+  const personDays = headcount * days;
+
+  // Leave DAYS rather than requests: one application can straddle a month end,
+  // and only the days inside this month belong to this month.
+  const leaveDays = inScope.size
+    ? await prisma.leaveDay.findMany({
+        where: {
+          employeeId: { in: [...inScope] },
+          date: { gte: from, lte: to },
+          lengthDays: { gt: 0 },
+          leaveRequest: { status: "GRANTED" },
+        },
+        select: {
+          employeeId: true,
+          lengthDays: true,
+          leaveType: { select: { name: true } },
+          leaveRequest: { select: { paid: true } },
+        },
+      })
+    : [];
+
+  const perPerson = new Map<string, { days: number; paid: number; unpaid: number }>();
+  const perType = new Map<string, { days: number; people: Set<string> }>();
+  let total = 0;
+  let paidDays = 0;
+  let unpaidDays = 0;
+  const paidPeople = new Set<string>();
+  const unpaidPeople = new Set<string>();
+
+  for (const day of leaveDays) {
+    const length = Number(day.lengthDays);
+    total += length;
+    const row = perPerson.get(day.employeeId) ?? { days: 0, paid: 0, unpaid: 0 };
+    row.days += length;
+    // paid is null only on rows granted before FCSL made it a decision, which
+    // the migration backfilled — so anything null here is new and unpaid-unknown;
+    // counted as paid, because that is what consuming entitlement meant.
+    if (day.leaveRequest.paid === false) {
+      row.unpaid += length;
+      unpaidDays += length;
+      unpaidPeople.add(day.employeeId);
+    } else {
+      row.paid += length;
+      paidDays += length;
+      paidPeople.add(day.employeeId);
+    }
+    perPerson.set(day.employeeId, row);
+
+    const type = perType.get(day.leaveType.name) ?? { days: 0, people: new Set<string>() };
+    type.days += length;
+    type.people.add(day.employeeId);
+    perType.set(day.leaveType.name, type);
+  }
+
+  // FCSL's example read as a distribution: "9 people had 1 day leave and 3
+  // people had 4 days". Keyed on the day count so half days group with half
+  // days rather than rounding into the wrong bucket.
+  const byDayCount = new Map<number, number>();
+  for (const row of perPerson.values()) {
+    byDayCount.set(row.days, (byDayCount.get(row.days) ?? 0) + 1);
+  }
+
+  // Absence is only knowable once HR has published the month's sheet, so the
+  // figure and the "is this month closed" question come from the same place.
+  const [openBranches, publishedSheets, absences] = await Promise.all([
+    prisma.branch.findMany({
+      where: {
+        closedOn: null,
+        ...(scope.kind === "branch" ? { id: scope.id } : {}),
+        ...(scope.kind === "division" ? { divisionId: scope.id } : {}),
+      },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    prisma.attendanceSheet.findMany({
+      where: { year, month, status: "PUBLISHED" },
+      select: { branchId: true },
+    }),
+    inScope.size
+      ? prisma.attendanceEntry.findMany({
+          where: {
+            mark: "ABSENT",
+            employeeId: { in: [...inScope] },
+            sheet: { year, month, status: "PUBLISHED" },
+          },
+          select: { employeeId: true },
+        })
+      : [],
+  ]);
+
+  const published = new Set(publishedSheets.map((s) => s.branchId));
+  const awaiting = openBranches.filter((b) => !published.has(b.id)).map((b) => b.name);
+  const absentPeople = new Set(absences.map((a) => a.employeeId));
+
+  const ratio = (part: number) =>
+    personDays ? Math.round((part / personDays) * 1000) / 10 : 0;
+
+  return {
+    month: { year, month, days },
+    headcount,
+    personDays,
+    tookLeave: perPerson.size,
+    tookNone: Math.max(0, headcount - perPerson.size),
+    leaveDays: Math.round(total * 100) / 100,
+    leaveRatio: ratio(total),
+    paid: { people: paidPeople.size, days: Math.round(paidDays * 100) / 100 },
+    unpaid: { people: unpaidPeople.size, days: Math.round(unpaidDays * 100) / 100 },
+    byType: [...perType.entries()]
+      .map(([name, v]) => ({ name, days: Math.round(v.days * 100) / 100, people: v.people.size }))
+      .sort((a, b) => b.days - a.days),
+    distribution: [...byDayCount.entries()]
+      .map(([d, count]) => ({ days: d, people: count }))
+      .sort((a, b) => a.days - b.days),
+    absence: {
+      days: absences.length,
+      people: absentPeople.size,
+      ratio: ratio(absences.length),
+    },
+    closed: awaiting.length === 0,
+    awaiting,
+    publishedBranches: openBranches.length - awaiting.length,
+    openBranches: openBranches.length,
+    peopleTotal: perPerson.size,
+    people: people
+      .filter((p) => perPerson.has(p.id))
+      .map((p) => {
+        const row = perPerson.get(p.id)!;
+        return {
+          id: p.id,
+          name: p.fullName,
+          employeeId: p.employeeId,
+          branch: p.branch?.name ?? "—",
+          department: p.department?.name ?? "—",
+          days: Math.round(row.days * 100) / 100,
+          paidDays: Math.round(row.paid * 100) / 100,
+          unpaidDays: Math.round(row.unpaid * 100) / 100,
+          ratio: days ? Math.round((row.days / days) * 1000) / 10 : 0,
+        };
+      })
+      .sort((a, b) => b.days - a.days)
+      .slice(0, SUMMARY_PEOPLE_LIMIT),
+  };
+}

@@ -11,7 +11,7 @@ export const metadata = { title: "Branches · FCSL HR" };
 export default async function Page() {
   await requireCapability("branches.manage");
 
-  const [branches, managers] = await Promise.all([
+  const [branches, managers, divisions] = await Promise.all([
     prisma.branch.findMany({
       include: {
         branchManager: true,
@@ -24,12 +24,18 @@ export default async function Page() {
       select: { id: true, fullName: true, employeeId: true },
       orderBy: { fullName: "asc" },
     }),
+    prisma.division.findMany({
+      where: { retiredAt: null },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
   ]);
 
   const managerOptions = managers.map((m) => ({
     id: m.id,
     name: `${m.fullName}${m.employeeId ? ` · ${m.employeeId}` : ""}`,
   }));
+  const divisionOptions = divisions.map((d) => ({ id: d.id, name: d.name }));
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -70,8 +76,10 @@ export default async function Page() {
                     phone: branch.phone,
                     openedOn: branch.openedOn ? branch.openedOn.toISOString().slice(0, 10) : "",
                     branchManagerId: branch.branchManagerId,
+                    divisionId: branch.divisionId,
                   }}
                   managers={managerOptions}
+                  divisions={divisionOptions}
                 />
               )}
             </Card>
@@ -82,7 +90,7 @@ export default async function Page() {
       <section>
         <h2 className="mb-3 text-sm font-semibold text-ink-900">Add a branch</h2>
         <Card className="p-6">
-          <BranchForm branchId={null} managers={managerOptions} />
+          <BranchForm branchId={null} managers={managerOptions} divisions={divisionOptions} />
         </Card>
       </section>
     </main>

@@ -317,9 +317,12 @@ export async function removeHoliday(id: string): Promise<SettingsResult> {
   return { ok: true };
 }
 
-/** Departments, designations and grades — retired, never deleted. */
+/** Departments, designations, grades and divisions — retired, never deleted. */
+/** The four lists the HR Head keeps (§12.2). */
+export type OrgKind = "department" | "designation" | "grade" | "division";
+
 export async function saveOrgItem(
-  kind: "department" | "designation" | "grade",
+  kind: OrgKind,
   _previous: unknown,
   formData: FormData,
 ): Promise<SettingsResult> {
@@ -337,12 +340,15 @@ export async function saveOrgItem(
       ? await prisma.department.findUnique({ where: { name } })
       : kind === "designation"
         ? await prisma.designation.findUnique({ where: { name } })
-        : await prisma.grade.findUnique({ where: { name } });
+        : kind === "division"
+          ? await prisma.division.findUnique({ where: { name } })
+          : await prisma.grade.findUnique({ where: { name } });
   if (exists) return { error: `"${name}" is already there.` };
 
   await prisma.$transaction(async (tx) => {
     if (kind === "department") await tx.department.create({ data: { name } });
     else if (kind === "designation") await tx.designation.create({ data: { name } });
+    else if (kind === "division") await tx.division.create({ data: { name } });
     else await tx.grade.create({ data: { name, rank } });
 
     await record({
@@ -359,7 +365,7 @@ export async function saveOrgItem(
 }
 
 export async function retireOrgItem(
-  kind: "department" | "designation" | "grade",
+  kind: OrgKind,
   id: string,
 ): Promise<SettingsResult> {
   const guard = await requireHrHead();
@@ -368,16 +374,27 @@ export async function retireOrgItem(
 
   // Retired, not deleted — historic assignments point at these rows and a
   // deleted grade would make an old posting unreadable.
-  const inUse =
-    kind === "department"
-      ? await prisma.employee.count({ where: { departmentId: id, status: "ACTIVE" } })
-      : kind === "designation"
-        ? await prisma.employee.count({ where: { designationId: id, status: "ACTIVE" } })
-        : await prisma.employee.count({ where: { gradeId: id, status: "ACTIVE" } });
-  if (inUse > 0) {
-    return {
-      error: `${inUse} active ${inUse === 1 ? "person is" : "people are"} still on this. Move them first.`,
-    };
+  // A division holds BRANCHES, not people — FCSL's divisions are geographic —
+  // so the question "is anything still on this" is a different one for it.
+  if (kind === "division") {
+    const branches = await prisma.branch.count({ where: { divisionId: id, closedOn: null } });
+    if (branches > 0) {
+      return {
+        error: `${branches} open branch${branches === 1 ? " is" : "es are"} still in this division. Move them first.`,
+      };
+    }
+  } else {
+    const inUse =
+      kind === "department"
+        ? await prisma.employee.count({ where: { departmentId: id, status: "ACTIVE" } })
+        : kind === "designation"
+          ? await prisma.employee.count({ where: { designationId: id, status: "ACTIVE" } })
+          : await prisma.employee.count({ where: { gradeId: id, status: "ACTIVE" } });
+    if (inUse > 0) {
+      return {
+        error: `${inUse} active ${inUse === 1 ? "person is" : "people are"} still on this. Move them first.`,
+      };
+    }
   }
 
   // The NAME, read before it is retired. Every other historical row in this
@@ -389,7 +406,9 @@ export async function retireOrgItem(
       ? await prisma.department.findUnique({ where: { id }, select: { name: true } })
       : kind === "designation"
         ? await prisma.designation.findUnique({ where: { id }, select: { name: true } })
-        : await prisma.grade.findUnique({ where: { id }, select: { name: true } });
+        : kind === "division"
+          ? await prisma.division.findUnique({ where: { id }, select: { name: true } })
+          : await prisma.grade.findUnique({ where: { id }, select: { name: true } });
   if (!named) return { error: "Not found." };
 
   const retiredAt = new Date();
@@ -397,6 +416,7 @@ export async function retireOrgItem(
   await prisma.$transaction(async (tx) => {
     if (kind === "department") await tx.department.update({ where: { id }, data: { retiredAt } });
     else if (kind === "designation") await tx.designation.update({ where: { id }, data: { retiredAt } });
+    else if (kind === "division") await tx.division.update({ where: { id }, data: { retiredAt } });
     else await tx.grade.update({ where: { id }, data: { retiredAt } });
 
     await record({

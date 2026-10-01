@@ -26,6 +26,8 @@ const branchSchema = z.object({
   phone: z.string().trim().max(40).optional().default(""),
   openedOn: z.string().trim().optional().default(""),
   branchManagerId: z.string().trim().optional().default(""),
+  /// Which geographic division the branch sits in (FCSL, 2 October 2026).
+  divisionId: z.string().trim().optional().default(""),
 });
 
 export async function saveBranch(
@@ -51,6 +53,7 @@ export async function saveBranch(
     phone: parsed.data.phone,
     openedOn: fromISODate(parsed.data.openedOn),
     branchManagerId: parsed.data.branchManagerId || null,
+    divisionId: parsed.data.divisionId || null,
   };
 
   const actorName = context.employee?.fullName ?? context.user.email;

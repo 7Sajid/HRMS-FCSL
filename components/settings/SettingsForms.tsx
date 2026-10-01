@@ -14,6 +14,7 @@ import {
   setLeaveTypeAudience,
   setLeaveTypeProbation,
 } from "@/app/actions/hr-settings";
+import type { OrgKind } from "@/app/actions/hr-settings";
 import { Button } from "@/components/ui/Button";
 import { Field, Input, Select } from "@/components/ui/Field";
 import { ErrorBox } from "@/components/ui/Feedback";
@@ -303,7 +304,7 @@ export function RemoveHolidayButton({ id }: { id: string }) {
   );
 }
 
-export function OrgListForm({ kind }: { kind: "department" | "designation" | "grade" }) {
+export function OrgListForm({ kind }: { kind: OrgKind }) {
   const [state, formAction, pending] = useActionState(saveOrgItem.bind(null, kind), null);
   return (
     <form action={formAction} className="flex flex-wrap items-end gap-2">
@@ -331,7 +332,7 @@ export function RetireButton({
   kind,
   id,
 }: {
-  kind: "department" | "designation" | "grade";
+  kind: OrgKind;
   id: string;
 }) {
   const router = useRouter();

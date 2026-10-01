@@ -58,6 +58,7 @@ export type Capability =
   | "showcause.readAny"
   // --- Oversight
   | "reports.read"
+  | "reports.monthlySummary"
   | "audit.read"
   /** Leave types, holiday calendar, org lists, thresholds. §12.2. */
   | "settings.manage";
@@ -158,6 +159,11 @@ const GRANTS: Record<Role, readonly Capability[]> = {
     "showcause.issue",
     "showcause.readAny",
     "reports.read",
+    // The monthly leave-and-absence summary, his alone (FCSL, 2 October 2026).
+    // The HR Head keeps reports.read and the branch attendance figures that go
+    // with the work of publishing them; this is the owner's month-end view of
+    // what the company actually lost, and FCSL asked for it to be his only.
+    "reports.monthlySummary",
     "audit.read",
 
     // TWO ABSENCES THAT LOOK LIKE MISTAKES AND ARE NOT. Both are read straight

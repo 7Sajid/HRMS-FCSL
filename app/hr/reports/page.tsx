@@ -9,7 +9,7 @@ import {
   leaveReport,
   terminalReport,
 } from "@/lib/reports";
-import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
+import { Card, EmptyState, PageHeader, Stat } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
 import { TableShell, Tbody, Td, Th, Thead, TableEmpty } from "@/components/ui/Table";
 
@@ -250,33 +250,6 @@ export default async function Page() {
         )}
       </section>
     </main>
-  );
-}
-
-function Stat({
-  label,
-  value,
-  big,
-  tone = "neutral",
-}: {
-  label: string;
-  value: number;
-  big?: boolean;
-  tone?: "neutral" | "warn" | "danger" | "success";
-}) {
-  const colour =
-    tone === "danger"
-      ? "text-red-600"
-      : tone === "warn"
-        ? "text-warn-500"
-        : tone === "success"
-          ? "text-success-500"
-          : "text-ink-900";
-  return (
-    <Card className="p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-ink-400">{label}</p>
-      <p className={`mt-1 font-bold tabular ${big ? "text-3xl" : "text-2xl"} ${colour}`}>{value}</p>
-    </Card>
   );
 }
 

@@ -6,7 +6,7 @@ import { runAccessClosure, runNoteReminders } from "../lib/jobs";
 import { ACTION_GROUPS, ACTION_LABELS, actionLabel } from "../lib/audit";
 import { employeeRecordScope } from "../lib/permissions";
 import { showCauseReplyPdf } from "../lib/pdf";
-import { headcount, documentReport, leaveReport } from "../lib/reports";
+import { headcount, documentReport, leaveReport, monthlySummary } from "../lib/reports";
 import { leaveTypesFor, leaveTypesForMany } from "../lib/leave-service";
 import {
   audienceIncludes,
@@ -75,6 +75,8 @@ function check(label: string, condition: boolean, detail = "") {
 let regressionLeaveTypeId: string | null = null;
 /** Section 17's department, cleared in the `finally` by exact id. */
 const QA_DEPARTMENT = "QA Regression Department";
+/** Section 35's division, cleared in its own finally. */
+const QA_DIVISION = "QA Regression Division";
 let requisitionDepartmentId: string | null = null;
 /** The carry-forward check's own leave type, cleared the same way. */
 let carryLeaveTypeId: string | null = null;
@@ -121,6 +123,10 @@ async function main() {
   // Same again for section 17's department, whose name is unique: a leftover
   // would fail the create rather than being quietly reused.
   await prisma.department.deleteMany({ where: { name: QA_DEPARTMENT } });
+  // Section 35's, whose name is unique too. Its branches go first: a division
+  // with a branch still in it cannot be removed.
+  await prisma.branch.deleteMany({ where: { code: { in: ["QAMON", "QAQUI"] } } });
+  await prisma.division.deleteMany({ where: { name: QA_DIVISION } });
 
   // ---------------------------------------------------------------------
   console.log("\n1 · A person who has left cannot sign in (§6.6)");
@@ -2032,6 +2038,192 @@ async function main() {
     } finally {
       await prisma.branch.deleteMany({ where: { id: refBranch.id } });
       void onRecord;
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  console.log("\n35 · The Super Admin's month, FCSL's own example (2 October 2026)");
+  {
+    // "100 employee and 10 people got paid leave and 5 got unpaid and in total
+    // 9 people had 1 day leave and 3 people had 4 days leave" — the same shape,
+    // at a size a test can state exactly. May 2029, so no other section's data
+    // can land in the same month.
+    const YEAR = 2029;
+    const MONTH = 5;
+    const DAYS = 31;
+
+    const division = await prisma.division.create({ data: { name: QA_DIVISION } });
+    const here = await prisma.branch.create({
+      data: { name: "QA Month Branch", code: "QAMON", divisionId: division.id },
+    });
+    const alsoHere = await prisma.branch.create({
+      data: { name: "QA Quiet Branch", code: "QAQUI", divisionId: division.id },
+    });
+    const sickType = (await prisma.leaveType.findFirstOrThrow({ where: { code: "SICK" } }));
+
+    try {
+      const take = async (
+        email: string,
+        name: string,
+        from: Date,
+        to: Date,
+        paid: boolean,
+      ) => {
+        const person = await fixture(email, name, {
+          joiningDate: calendarDate(2020, 1, 1),
+          branchId: here.id,
+        });
+        const planned = planLeaveDays(from, to, new Set());
+        await prisma.leaveRequest.create({
+          data: {
+            employeeId: person.employeeId,
+            leaveTypeId: sickType.id,
+            reason: "qa month",
+            status: "GRANTED",
+            paid,
+            currentStep: 0,
+            days: {
+              create: planned.map((day) => ({
+                employeeId: person.employeeId,
+                leaveTypeId: sickType.id,
+                date: day.date,
+                dayKind: day.dayKind,
+                lengthDays: day.lengthDays,
+              })),
+            },
+          },
+        });
+        return person;
+      };
+
+      // Two working days paid, four working days unpaid. 7–8 May 2029 is a
+      // Monday and Tuesday; 14–17 May is Monday to Thursday.
+      const paidOne = await take(
+        "qa-month-paid@qa.fcsl.invalid",
+        "QA Month Paid",
+        calendarDate(YEAR, MONTH, 7),
+        calendarDate(YEAR, MONTH, 8),
+        true,
+      );
+      await take(
+        "qa-month-unpaid@qa.fcsl.invalid",
+        "QA Month Unpaid",
+        calendarDate(YEAR, MONTH, 14),
+        calendarDate(YEAR, MONTH, 17),
+        false,
+      );
+
+      const byBranch = await monthlySummary(YEAR, MONTH, { kind: "branch", id: here.id });
+      check(
+        "the month knows its own length, not a flat thirty",
+        byBranch.month.days === DAYS && byBranch.personDays === 2 * DAYS,
+        `${byBranch.month.days} days, ${byBranch.personDays} person-days`,
+      );
+      check(
+        "how many took leave, and how many took none",
+        byBranch.headcount === 2 && byBranch.tookLeave === 2 && byBranch.tookNone === 0,
+        `${byBranch.headcount}/${byBranch.tookLeave}/${byBranch.tookNone}`,
+      );
+      check(
+        "paid and unpaid are counted apart, in people and in days",
+        byBranch.paid.people === 1 &&
+          byBranch.paid.days === 2 &&
+          byBranch.unpaid.people === 1 &&
+          byBranch.unpaid.days === 4,
+        JSON.stringify({ paid: byBranch.paid, unpaid: byBranch.unpaid }),
+      );
+      check(
+        "the ratio is leave days against person-days — 6 of 62",
+        byBranch.leaveDays === 6 && byBranch.leaveRatio === 9.7,
+        `${byBranch.leaveDays} days, ${byBranch.leaveRatio}%`,
+      );
+      check(
+        "and the distribution reads as FCSL described it: one on 2 days, one on 4",
+        JSON.stringify(byBranch.distribution) ===
+          JSON.stringify([
+            { days: 2, people: 1 },
+            { days: 4, people: 1 },
+          ]),
+        JSON.stringify(byBranch.distribution),
+      );
+      check(
+        "every person who took leave is listed, most first",
+        byBranch.people.length === 2 && byBranch.people[0]!.days === 4,
+        JSON.stringify(byBranch.people.map((p) => `${p.name}:${p.days}`)),
+      );
+
+      // The division holds both branches, so it reports the same people — a
+      // person's division follows from their branch.
+      const byDivision = await monthlySummary(YEAR, MONTH, { kind: "division", id: division.id });
+      check(
+        "read by division it finds the same people through their branch",
+        byDivision.headcount === 2 && byDivision.leaveDays === 6,
+        `${byDivision.headcount} people, ${byDivision.leaveDays} days`,
+      );
+
+      const byPerson = await monthlySummary(YEAR, MONTH, { kind: "employee", id: paidOne.employeeId });
+      check(
+        "and one person at a time is just them",
+        byPerson.headcount === 1 && byPerson.leaveDays === 2 && byPerson.unpaid.days === 0,
+        `${byPerson.headcount} person, ${byPerson.leaveDays} days`,
+      );
+
+      // Nothing published yet, so the figures are provisional and both branches
+      // are named as outstanding.
+      check(
+        "with no branch published, the month is open and says which are missing",
+        byDivision.closed === false && byDivision.awaiting.length === 2,
+        JSON.stringify(byDivision.awaiting),
+      );
+
+      const sheet = await prisma.attendanceSheet.create({
+        data: {
+          branchId: here.id,
+          year: YEAR,
+          month: MONTH,
+          status: "PUBLISHED",
+          publishedByName: "QA",
+          publishedAt: new Date(),
+          entries: {
+            create: [
+              {
+                employeeId: paidOne.employeeId,
+                date: calendarDate(YEAR, MONTH, 21),
+                mark: "ABSENT",
+              },
+            ],
+          },
+        },
+      });
+      const published = await monthlySummary(YEAR, MONTH, { kind: "branch", id: here.id });
+      check(
+        "once its branch publishes, that branch's month is closed",
+        published.closed === true && published.awaiting.length === 0,
+      );
+      check(
+        "and the absence is counted, with its own ratio",
+        published.absence.days === 1 &&
+          published.absence.people === 1 &&
+          published.absence.ratio === 1.6,
+        JSON.stringify(published.absence),
+      );
+      check(
+        "but the division is still open while the other branch has not published",
+        (await monthlySummary(YEAR, MONTH, { kind: "division", id: division.id })).awaiting.join() ===
+          "QA Quiet Branch",
+      );
+
+      check(
+        "[source] the summary is the Super Admin's alone",
+        /"reports\.monthlySummary"/.test(source("lib/permissions.ts")) &&
+          /requireCapability\("reports\.monthlySummary"\)/.test(source("app/admin/month/page.tsx")),
+      );
+      void alsoHere;
+    } finally {
+      await cleanFixtures();
+      await prisma.attendanceSheet.deleteMany({ where: { branchId: { in: [here.id, alsoHere.id] } } });
+      await prisma.branch.deleteMany({ where: { id: { in: [here.id, alsoHere.id] } } });
+      await prisma.division.deleteMany({ where: { id: division.id } });
     }
   }
 

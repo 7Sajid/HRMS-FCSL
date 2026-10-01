@@ -94,6 +94,11 @@ describe("the menu each panel gets", () => {
       "/admin/accounts",
       "/admin/approvals",
       "/admin/audit",
+      // The month-end leave and absence summary, his alone (FCSL, 2 October
+      // 2026). The HR Head keeps reports.read and the branch attendance figures
+      // that go with publishing them; this is the owner's view of the closed
+      // month, and it carries its own capability so that stays true.
+      "/admin/month",
     ]);
     expect(head.filter((h) => !links.includes(h)).sort()).toEqual([
       "/hr/attendance",

@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import type { OrgKind } from "@/app/actions/hr-settings";
 import { requireCapability } from "@/lib/auth";
 import { formatDate, todayInDhaka } from "@/lib/dates";
 import { ruleOn } from "@/lib/leave";
@@ -59,7 +60,7 @@ export default async function Page() {
   const today = todayInDhaka();
   const year = today.getUTCFullYear();
 
-  const [types, holidays, departments, designations, grades, settings] = await Promise.all([
+  const [types, holidays, departments, divisions, designations, grades, settings] = await Promise.all([
     prisma.leaveType.findMany({
       where: { retiredAt: null },
       include: { rules: { orderBy: { effectiveFrom: "desc" } } },
@@ -67,6 +68,7 @@ export default async function Page() {
     }),
     prisma.holiday.findMany({ where: { year }, orderBy: { date: "asc" } }),
     prisma.department.findMany({ include: { head: true }, orderBy: { name: "asc" } }),
+    prisma.division.findMany({ orderBy: { name: "asc" } }),
     prisma.designation.findMany({ orderBy: { name: "asc" } }),
     prisma.grade.findMany({ orderBy: { rank: "asc" } }),
     prisma.setting.findMany({ orderBy: { key: "asc" } }),
@@ -230,7 +232,13 @@ export default async function Page() {
           Retired, never deleted — an old posting that pointed at a deleted grade would become
           unreadable.
         </p>
-        <div className="grid gap-4 lg:grid-cols-3">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <OrgList
+            title="Divisions"
+            kind="division"
+            rows={divisions.map((d) => ({ id: d.id, name: d.name, retired: Boolean(d.retiredAt) }))}
+            note="Geographic — Dhaka, Chattogram. A branch is put into one on the Branches screen."
+          />
           <OrgList
             title="Departments"
             kind="department"
@@ -304,16 +312,19 @@ function OrgList({
   title,
   kind,
   rows,
+  note,
 }: {
   title: string;
-  kind: "department" | "designation" | "grade";
+  kind: OrgKind;
   rows: { id: string; name: string; retired: boolean }[];
+  note?: string;
 }) {
   return (
     <Card className="p-5">
-      <h3 className="mb-3 text-xs font-semibold tracking-widest text-ink-400">
+      <h3 className="mb-1 text-xs font-semibold tracking-widest text-ink-400">
         {title.toUpperCase()}
       </h3>
+      {note && <p className="mb-3 text-xs text-ink-500">{note}</p>}
       <ul className="mb-4 space-y-1 text-sm">
         {rows.map((row) => (
           <li key={row.id} className="flex items-center gap-2">

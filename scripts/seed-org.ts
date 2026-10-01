@@ -1,7 +1,7 @@
 import { args, finish, prisma } from "./_cli";
 
 /**
- * FCSL's own lists — branches, departments, designations and grades.
+ * FCSL's own lists — divisions, branches, departments, designations and grades.
  *
  * Kept out of prisma/seed.ts on purpose: that file creates what the system
  * cannot start without, and an organisation chart is not that. These values
@@ -36,6 +36,21 @@ const DEPARTMENTS = [
 //
 // No rank here: Designation has none, and these sort alphabetically wherever
 // they are shown.
+// Bangladesh's eight administrative divisions (FCSL, 2 October 2026). FCSL's
+// divisions are geographic and hold branches: Dhaka is a division with several
+// offices under it, Chattogram is another. The HR Head retires the ones FCSL has
+// no office in.
+const DIVISIONS = [
+  "Dhaka",
+  "Chattogram",
+  "Khulna",
+  "Rajshahi",
+  "Barishal",
+  "Sylhet",
+  "Rangpur",
+  "Mymensingh",
+];
+
 const DESIGNATIONS = [
   "Intern",
   "Junior Executive",
@@ -89,7 +104,8 @@ const GRADES: [string, number][] = [
 ];
 
 async function list() {
-  const [branches, departments, designations, grades] = await Promise.all([
+  const [divisions, branches, departments, designations, grades] = await Promise.all([
+    prisma.division.findMany({ orderBy: { name: "asc" } }),
     prisma.branch.findMany({ orderBy: { name: "asc" } }),
     prisma.department.findMany({ orderBy: { name: "asc" } }),
     prisma.designation.findMany({ orderBy: { name: "asc" } }),
@@ -102,6 +118,7 @@ async function list() {
     for (const row of rows) console.log(`  ${row.retiredAt ? "· retired ·" : "·"} ${row.name}`);
   };
 
+  show("Divisions", divisions);
   show("Branches", branches);
   show("Departments", departments);
   show("Designations", designations);
@@ -127,12 +144,24 @@ async function seed() {
     await prisma.grade.upsert({ where: { name }, update: {}, create: { name, rank } });
   }
 
+  for (const name of DIVISIONS) {
+    await prisma.division.upsert({ where: { name }, update: {}, create: { name } });
+  }
+
   // One branch, so that a joiner can be approved before FCSL's real branch
   // list is entered. Head Office is the safe default; the rest come from HR.
+  // Put in Dhaka, since that is where FCSL's head office is, so the Super
+  // Admin's division filter has something behind it on day one.
+  const dhaka = await prisma.division.findUnique({ where: { name: "Dhaka" } });
   await prisma.branch.upsert({
     where: { code: "HO" },
     update: {},
-    create: { name: "Head Office", code: "HO", openedOn: new Date(Date.UTC(2000, 0, 1)) },
+    create: {
+      name: "Head Office",
+      code: "HO",
+      openedOn: new Date(Date.UTC(2000, 0, 1)),
+      divisionId: dhaka?.id ?? null,
+    },
   });
 
   console.log(`\n✓ org lists present (${added} newly added this run)`);

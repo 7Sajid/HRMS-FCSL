@@ -13,6 +13,7 @@ export function BranchForm({
   branchId,
   initial,
   managers,
+  divisions,
 }: {
   branchId: string | null;
   initial?: {
@@ -22,8 +23,10 @@ export function BranchForm({
     phone: string;
     openedOn: string;
     branchManagerId: string | null;
+    divisionId: string | null;
   };
   managers: Option[];
+  divisions: Option[];
 }) {
   const [state, formAction, pending] = useActionState(saveBranch.bind(null, branchId), null);
 
@@ -48,6 +51,24 @@ export function BranchForm({
           type="date"
           defaultValue={initial?.openedOn ?? ""}
         />
+      </Field>
+      <Field
+        label="Division"
+        htmlFor={`division-${branchId ?? "new"}`}
+        hint="Dhaka, Chattogram and the rest. The Super Admin reads his month a division at a time."
+      >
+        <Select
+          id={`division-${branchId ?? "new"}`}
+          name="divisionId"
+          defaultValue={initial?.divisionId ?? ""}
+        >
+          <option value="">— not set —</option>
+          {divisions.map((division) => (
+            <option key={division.id} value={division.id}>
+              {division.name}
+            </option>
+          ))}
+        </Select>
       </Field>
       <Field
         label="Branch manager"

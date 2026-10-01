@@ -89,6 +89,15 @@ Three rules, and they are the part most likely to cause an argument later:
 - **Out of scope:** payroll, recruitment, appraisal, personal-trading surveillance, punch machines, SMS, Bangla, a mobile app, and any connection to the back office.
 - Reading NIDs with AI is **deferred**. HR types the fields manually. The schema leaves room for the amber-dot confirmation flow to arrive later.
 
+## The Super Admin's month (§6.10, FCSL 2 October 2026)
+
+`/admin/month` — "how many people took leave this month, how many is paid, how many is unpaid, ratio against 30 days". **His alone**, on its own capability `reports.monthlySummary`. The HR Head keeps `reports.read` and the branch attendance figures that go with the work of publishing them; this is the owner's view of a closed month.
+
+- **The ratio divides by person-days** — headcount × the days in that month, using the month's real length so February is not flattered. Working days are deliberately not the denominator: it is the figure FCSL asked for, and it does not move when a holiday is entered late.
+- **Filterable** by the whole company, a **division**, a branch or a department, and it always lists every person who took leave, worst first (capped, rule 7).
+- **Divisions are geographic and sit above branches** — Dhaka, Chattogram. `Branch.divisionId`, never on the employee: a person's division follows from where they work, so a second copy on the employee could disagree with the first and would need a column in the 412-row import nobody would fill in. The HR Head keeps the list in Settings and puts a branch in one on the Branches screen.
+- **Absence needs a published sheet**, so the page says whether the month is closed and names the branches still to publish. Leave is complete either way — it does not wait on a branch. The figures are shown regardless, marked provisional, because a blank screen tells him nothing he can act on.
+
 ## Privacy (§9)
 
 Two rows are easy to get wrong and both are deliberate:

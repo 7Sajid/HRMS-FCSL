@@ -124,6 +124,12 @@ const SECTIONS: NavSection[] = [
         icon: "approvals",
         capability: "leave.approveFinal",
       },
+      {
+        label: "The month",
+        href: "/admin/month",
+        icon: "report",
+        capability: "reports.monthlySummary",
+      },
       { label: "Accounts", href: "/admin/accounts", icon: "user", capability: "accounts.manage" },
       {
         label: "Permanent record",

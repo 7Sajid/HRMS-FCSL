@@ -516,6 +516,16 @@ model Branch {
   branchManagerId String?
   branchManager   Employee? @relation("BranchManager", fields: [branchManagerId], references: [id], onDelete: SetNull)
 
+  /// The geographic division this branch sits in — Dhaka, Chattogram and the
+  /// rest (FCSL, 2 October 2026).
+  ///
+  /// On the BRANCH, not on the employee: FCSL's divisions contain branches, so a
+  /// person's division follows from where they work. Putting it on the employee
+  /// would be a second copy of the same fact, free to disagree with the first,
+  /// and would need a column in the 412-row import that nobody would fill in.
+  divisionId String?
+  division   Division? @relation(fields: [divisionId], references: [id], onDelete: SetNull)
+
   createdAt DateTime @default(now()) @db.Timestamptz(3)
   updatedAt DateTime @updatedAt @db.Timestamptz(3)
 
@@ -526,6 +536,23 @@ model Branch {
   calendarEvents   CalendarEvent[]
 
   @@index([closedOn])
+  @@index([divisionId])
+}
+
+/// A geographic division — Dhaka, Chattogram, Khulna and so on (FCSL,
+/// 2 October 2026). Several branches sit under each, and the Super Admin's
+/// monthly summary can be read a division at a time.
+///
+/// A list the HR Head keeps, like departments and grades, rather than an enum:
+/// FCSL opens and closes offices, and which divisions they operate in is not a
+/// fact about the software.
+model Division {
+  id        String    @id @default(cuid())
+  name      String    @unique
+  retiredAt DateTime? @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+
+  branches Branch[]
 }
 
 /// Departments, designations and grades are HR-managed lists, not code. They
