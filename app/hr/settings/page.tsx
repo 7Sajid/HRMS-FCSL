@@ -25,7 +25,7 @@ export const metadata = { title: "Settings · FCSL HR" };
 // that changes nothing is worse than no number at all.
 const SETTING_LABELS: Record<string, { label: string; note: string }> = {
   "attendance.deadlineDayOfMonth": {
-    label: "Attendance deadline",
+    label: "Branch attendance deadline",
     note: "Day of the following month by which branches must submit.",
   },
   "leave.maximumDays": {

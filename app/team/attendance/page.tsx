@@ -7,7 +7,7 @@ import { EmptyState, PageHeader } from "@/components/ui/Card";
 import { AttendanceGrid, type GridCell } from "@/components/attendance/Grid";
 import type { AttendanceMark } from "@prisma/client";
 
-export const metadata = { title: "Attendance sheet · FCSL HR" };
+export const metadata = { title: "Branch attendance · FCSL HR" };
 
 type Props = { searchParams: Promise<{ m?: string }> };
 
@@ -34,7 +34,7 @@ export default async function Page({ searchParams }: Props) {
   if (!branch) {
     return (
       <main className="mx-auto max-w-4xl px-6 py-10">
-        <PageHeader title="Attendance sheet" subtitle="Once a month, for your branch." />
+        <PageHeader title="Branch attendance" subtitle="Once a month, for your branch." />
         <EmptyState>
           You are not recorded as the manager of any branch, so there is no sheet to fill in. HR sets
           this on the branch record.
@@ -130,7 +130,7 @@ export default async function Page({ searchParams }: Props) {
     <main className="mx-auto max-w-6xl px-6 py-10">
       <PageHeader
         eyebrow={branch.name.toUpperCase()}
-        title={`Attendance — ${formatMonth(year, month)}`}
+        title={`Branch attendance — ${formatMonth(year, month)}`}
         subtitle="Approved leave, Fridays, Saturdays and public holidays are filled in already and cannot be changed."
         actions={
           <div className="flex gap-1">

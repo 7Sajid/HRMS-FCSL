@@ -87,7 +87,7 @@ export default async function Page({ params }: Props) {
     <main className="mx-auto max-w-5xl px-6 py-10">
       <PageHeader
         eyebrow={sheet.branch.name.toUpperCase()}
-        title={formatMonth(sheet.year, sheet.month)}
+        title={`Branch attendance — ${formatMonth(sheet.year, sheet.month)}`}
         subtitle={`Submitted by ${sheet.submittedByName} on ${formatDateTime(sheet.submittedAt)}`}
         actions={
           <div className="flex items-center gap-2">

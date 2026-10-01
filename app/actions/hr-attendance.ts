@@ -28,7 +28,7 @@ export async function correctEntry(
 ): Promise<VerifyResult> {
   const context = await getSessionContext();
   if (!context) return { error: "Please sign in again." };
-  if (!can(context.viewer, "attendance.verify")) return { error: "You cannot correct attendance." };
+  if (!can(context.viewer, "attendance.verify")) return { error: "You cannot correct branch attendance." };
 
   const written = reason.trim().slice(0, 300);
   if (written.length < 5) {
@@ -93,7 +93,7 @@ export async function correctEntry(
 export async function publishSheet(sheetId: string): Promise<VerifyResult> {
   const context = await getSessionContext();
   if (!context) return { error: "Please sign in again." };
-  if (!can(context.viewer, "attendance.verify")) return { error: "You cannot publish attendance." };
+  if (!can(context.viewer, "attendance.verify")) return { error: "You cannot publish branch attendance." };
 
   const sheet = await prisma.attendanceSheet.findUnique({
     where: { id: sheetId },

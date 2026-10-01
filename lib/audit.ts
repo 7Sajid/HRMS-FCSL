@@ -180,8 +180,8 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "leave.entitlement_granted": "Leave entitlement granted",
 
   "attendance.sheet_submitted": "Branch attendance submitted",
-  "attendance.corrected": "Attendance corrected by HR",
-  "attendance.published": "Monthly attendance published",
+  "attendance.corrected": "Branch attendance corrected by HR",
+  "attendance.published": "Monthly branch attendance published",
 
   "requisition.raised": "Requisition raised",
   "requisition.withdrawn": "Requisition withdrawn",
@@ -282,7 +282,7 @@ export const ACTION_GROUPS: { label: string; actions: AuditAction[] }[] = [
     ],
   },
   {
-    label: "Leave and attendance",
+    label: "Leave and branch attendance",
     actions: [
       "leave.applied",
       "leave.approved_step",

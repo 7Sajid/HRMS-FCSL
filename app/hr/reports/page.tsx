@@ -172,7 +172,7 @@ export default async function Page() {
 
       <section className="mb-10">
         <h2 className="mb-3 text-sm font-semibold text-ink-900">
-          Attendance — {formatMonth(attendance.month.year, attendance.month.month)}
+          Branch attendance — {formatMonth(attendance.month.year, attendance.month.month)}
         </h2>
         {attendance.branches.length === 0 ? (
           <EmptyState>No branch has published that month yet.</EmptyState>

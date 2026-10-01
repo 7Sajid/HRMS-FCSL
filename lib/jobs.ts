@@ -356,7 +356,7 @@ export async function runAttendanceReminders(today = todayInDhaka()): Promise<Jo
 
     await notify({
       userId: branch.branchManager.userId,
-      title: `${monthName} attendance for ${branch.name} has not been submitted`,
+      title: `${monthName} branch attendance for ${branch.name} has not been submitted`,
       body:
         lateBy === 0
           ? "It is due today."
@@ -386,7 +386,7 @@ export async function runAttendanceReminders(today = todayInDhaka()): Promise<Jo
   await recordQuietly({
     action: "system.cron_ran",
     targetType: "job",
-    targetLabel: "Attendance reminders",
+    targetLabel: "Branch attendance reminders",
     detail: { month: monthName, outstanding: outstanding.length, reminded: acted },
   });
 

@@ -60,7 +60,7 @@ const SECTIONS: NavSection[] = [
       },
       { label: "My team", href: "/team/roster", icon: "team", capability: "team.readRecords" },
       {
-        label: "Attendance sheet",
+        label: "Branch attendance",
         href: "/team/attendance",
         icon: "grid",
         capability: "attendance.submit",
@@ -85,7 +85,7 @@ const SECTIONS: NavSection[] = [
         capability: "certificates.manage",
       },
       {
-        label: "Attendance",
+        label: "Branch attendance",
         href: "/hr/attendance",
         icon: "grid",
         capability: "attendance.verify",

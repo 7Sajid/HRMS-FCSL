@@ -5,7 +5,7 @@ import { formatDateTime, formatMonth, todayInDhaka } from "@/lib/dates";
 import { Card, EmptyState, PageHeader } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Feedback";
 
-export const metadata = { title: "Attendance · FCSL HR" };
+export const metadata = { title: "Branch attendance · FCSL HR" };
 
 /**
  * §6.3 — HR checks the sheets against leave records, corrects with a reason
@@ -46,7 +46,7 @@ export default async function Page() {
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
       <PageHeader
-        title="Attendance"
+        title="Branch attendance"
         subtitle={`${formatMonth(year, month)} — check each branch against leave, correct with a reason, then publish.`}
       />
 
