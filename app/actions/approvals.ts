@@ -16,6 +16,8 @@ export async function decideLeave(
   requestId: string,
   decision: "GRANT" | "DENY",
   reason: string,
+  /** With pay or without — the final approver's call, ignored at earlier steps. */
+  paid: boolean | null = null,
 ): Promise<DecisionResult> {
   const context = await getSessionContext();
   if (!context) return { error: "Please sign in again." };
@@ -31,6 +33,7 @@ export async function decideLeave(
     decision,
     reason,
     await currentIp(),
+    paid,
   );
 
   if ("error" in result) return result;

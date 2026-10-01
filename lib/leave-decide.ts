@@ -4,6 +4,7 @@ import { actorFrom, record } from "./audit";
 import { notify } from "./notifications";
 import { canDecideAt, chainAdvance } from "./approval-chain";
 import { consumeEntitlement } from "./leave-service";
+import { isUncounted } from "./leave";
 import { formatDate } from "./dates";
 import { sendMail, layout, escapeHtml } from "./email";
 
@@ -47,6 +48,14 @@ export async function applyLeaveDecision(
   decision: "GRANT" | "DENY",
   reason: string,
   ip = "",
+  /**
+   * Whether this leave is granted WITH pay — the final approver's call on every
+   * application, from anybody (FCSL, 1 October 2026).
+   *
+   * Only read at the last step: an approver in the middle of the chain passes
+   * it on and decides nothing about money. Null there, and required there.
+   */
+  paid: boolean | null = null,
 ): Promise<DecisionResult> {
   const request = await prisma.leaveRequest.findUnique({
     where: { id: requestId },
@@ -89,6 +98,33 @@ export async function applyLeaveDecision(
   const last = request.days.at(-1)?.date ?? null;
   const next = chainAdvance(applicantRole, request.currentStep);
   const actorName = actor.name;
+
+  // Money is decided at the last step and nowhere else, and it must be decided
+  // rather than defaulted. A default of "paid" would quietly spend a
+  // probationer's first permanent year on their behalf; a default of "unpaid"
+  // would quietly refuse to pay for leave somebody had earned. Neither is a
+  // decision anybody made, and both are invisible afterwards.
+  let withPay: boolean | null = null;
+  if (decision === "GRANT" && next.approver === null) {
+    if (paid === null) {
+      return { error: "Say whether this is granted with pay or without it." };
+    }
+    if (paid && first) {
+      // A type that grants no days has nothing to pay from. Asked of the rule
+      // in force on the first day of the leave, never of the type's name —
+      // FCSL renames and reconfigures these without a developer (§12.2).
+      const rule = await prisma.leaveTypeRule.findFirst({
+        where: { leaveTypeId: request.leaveTypeId, effectiveFrom: { lte: first } },
+        orderBy: { effectiveFrom: "desc" },
+      });
+      if (isUncounted(Number(rule?.daysPerYear ?? 0), rule?.overBalance ?? "WARN")) {
+        return {
+          error: `${request.leaveType.name} carries no entitlement, so it cannot be granted with pay.`,
+        };
+      }
+    }
+    withPay = paid;
+  }
   
   const outcome = await prisma.$transaction(async (tx) => {
     await tx.leaveApproval.create({
@@ -169,10 +205,24 @@ export async function applyLeaveDecision(
     // Rule 3 — the last step. This is the only moment the leave is granted.
     await tx.leaveRequest.update({
       where: { id: request.id },
-      data: { status: "GRANTED", currentApproverRole: null, decidedAt: new Date() },
+      data: {
+        status: "GRANTED",
+        currentApproverRole: null,
+        decidedAt: new Date(),
+        paid: withPay,
+      },
     });
 
-    const { shortfall } = await consumeEntitlement(tx, request.id);
+    // Unpaid leave is recorded and deducted from nothing: the days exist, the
+    // calendar and the attendance sheet show the absence, but no
+    // LeaveDayEntitlement row is written, so no balance moves. This is the half
+    // of FCSL's probation rule that makes the other half fair — a probationer's
+    // paid days are advanced against their first permanent year, and days
+    // granted without pay cost them nothing later.
+    const { shortfall } = withPay
+      ? await consumeEntitlement(tx, request.id)
+      : { shortfall: 0 };
+    const payNote = withPay ? "" : " This leave is without pay.";
 
     // The applicant AND every person who approved it along the way, together.
     const approverUserIds = [
@@ -186,14 +236,14 @@ export async function applyLeaveDecision(
       [
         {
           userId: request.employee.user.id,
-          title: `Your ${request.leaveType.name.toLowerCase()} is granted`,
-          body: `${cost} day${cost === 1 ? "" : "s"}, ${formatDate(first)} to ${formatDate(last)}.`,
+          title: `Your ${request.leaveType.name.toLowerCase()} is granted${withPay ? "" : " — without pay"}`,
+          body: `${cost} day${cost === 1 ? "" : "s"}, ${formatDate(first)} to ${formatDate(last)}.${payNote}`,
           link: "/me/leave",
         },
         ...approverUserIds.map((userId) => ({
           userId,
           title: `${request.employee.fullName}'s leave is granted`,
-          body: `${cost} day${cost === 1 ? "" : "s"}, ${formatDate(first)} to ${formatDate(last)}. You approved this.`,
+          body: `${cost} day${cost === 1 ? "" : "s"}, ${formatDate(first)} to ${formatDate(last)}.${payNote} You approved this.`,
           link: "/me/leave",
         })),
       ],
@@ -211,6 +261,7 @@ export async function applyLeaveDecision(
         from: formatDate(first),
         to: formatDate(last),
         approvers: request.approvals.map((a) => a.approverName).concat(actorName),
+        paid: withPay,
         ...(shortfall > 0 ? { entitlementShortfall: shortfall } : {}),
       },
       ip,
@@ -247,12 +298,18 @@ export async function applyLeaveDecision(
   } else if (outcome.kind === "granted") {
     await sendMail({
       to: request.employee.user.email,
-      subject: `Your ${request.leaveType.name.toLowerCase()} is granted`,
+      subject: `Your ${request.leaveType.name.toLowerCase()} is granted${withPay ? "" : " — without pay"}`,
       html: layout({
-        heading: "Your leave is granted",
+        heading: withPay ? "Your leave is granted" : "Your leave is granted, without pay",
         lines: [
           `${escapeHtml(formatDate(first))} to ${escapeHtml(formatDate(last))}, ${cost} working day${cost === 1 ? "" : "s"}.`,
-          "The days have come off your balance.",
+          // "The days have come off your balance" was true of every grant until
+          // FCSL let the Super Admin grant leave without pay. Saying it to
+          // somebody whose balance did not move is the kind of wrong sentence
+          // that gets argued about a year later.
+          withPay
+            ? "The days have come off your balance."
+            : "This is recorded as an absence without pay. Nothing has come off your leave balance.",
         ],
         link: { label: "See it in the system", href: "/me/leave" },
       }),

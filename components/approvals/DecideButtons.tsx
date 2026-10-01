@@ -18,10 +18,10 @@ export function DecideButtons({ id, isFinalStep }: { id: string; isFinalStep: bo
   const [error, setError] = useState("");
   const [pending, startTransition] = useTransition();
 
-  const decide = (decision: "GRANT" | "DENY") =>
+  const decide = (decision: "GRANT" | "DENY", paid: boolean | null = null) =>
     startTransition(async () => {
       setError("");
-      const result = await decideLeave(id, decision, reason);
+      const result = await decideLeave(id, decision, reason, paid);
       if ("error" in result) setError(result.error);
       else {
         setDenying(false);
@@ -70,15 +70,39 @@ export function DecideButtons({ id, isFinalStep }: { id: string; isFinalStep: bo
     );
   }
 
+  // Two buttons at the last step rather than a switch and one button. FCSL's
+  // final approver decides pay on every application (1 October 2026), and a
+  // decision that has to be made is better made by choosing between two named
+  // outcomes than by remembering to move a toggle first.
   return (
     <div className="space-y-2">
       {error && <ErrorBox>{error}</ErrorBox>}
-      <div className="flex gap-2">
-        <Button className="px-3 py-1.5 text-xs" disabled={pending} onClick={() => decide("GRANT")}>
-          {pending ? "…" : "Grant"}
-        </Button>
+      <div className="flex flex-wrap gap-2">
+        {isFinalStep ? (
+          <>
+            <Button
+              className="px-3 py-1.5 text-xs"
+              disabled={pending}
+              onClick={() => decide("GRANT", true)}
+            >
+              {pending ? "…" : "Grant with pay"}
+            </Button>
+            <Button
+              variant="secondary"
+              className="px-3 py-1.5 text-xs"
+              disabled={pending}
+              onClick={() => decide("GRANT", false)}
+            >
+              {pending ? "…" : "Grant without pay"}
+            </Button>
+          </>
+        ) : (
+          <Button className="px-3 py-1.5 text-xs" disabled={pending} onClick={() => decide("GRANT")}>
+            {pending ? "…" : "Grant"}
+          </Button>
+        )}
         <Button
-          variant="secondary"
+          variant="ghost"
           className="px-3 py-1.5 text-xs"
           disabled={pending}
           onClick={() => setDenying(true)}
@@ -88,7 +112,7 @@ export function DecideButtons({ id, isFinalStep }: { id: string; isFinalStep: bo
       </div>
       <p className="text-xs text-ink-400">
         {isFinalStep
-          ? "Granting finishes this — the days come off their balance."
+          ? "With pay, the days come off their balance. Without pay, the absence is recorded and nothing is deducted."
           : "Granting passes it on. It is not finished yet."}
       </p>
     </div>

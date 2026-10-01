@@ -65,12 +65,17 @@ function decideAs(
   requestId: string,
   decision: "GRANT" | "DENY",
   reason = "",
+  // The final approver must say whether it is paid (FCSL, 1 October 2026).
+  // Harmless at earlier steps, which ignore it.
+  paid: boolean | null = true,
 ) {
   return applyLeaveDecision(
     { userId: actor.user.id, role: actor.user.role, employeeId: actor.employee.id, name },
     requestId,
     decision,
     reason,
+    "",
+    paid,
   );
 }
 

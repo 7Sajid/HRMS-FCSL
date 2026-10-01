@@ -198,7 +198,16 @@ export default async function Page() {
                         )}
                       </span>
                     )}
-                    {request.status === "GRANTED" && <Badge tone="success">Granted</Badge>}
+                    {request.status === "GRANTED" && (
+                      <>
+                        <Badge tone="success">Granted</Badge>
+                        {/* The Super Admin decides pay on every application
+                            (FCSL, 1 October 2026). Unpaid leave took no days
+                            off the balance, so the person needs to see which
+                            of their absences cost them nothing. */}
+                        {request.paid === false && <Badge tone="warn">Without pay</Badge>}
+                      </>
+                    )}
                     {request.status === "DENIED" && (
                       <span>
                         <Badge tone="danger">Denied</Badge>

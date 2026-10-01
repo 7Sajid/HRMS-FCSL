@@ -545,7 +545,7 @@ async function main() {
     check("still nothing off the balance", (await consumed()) === 0);
 
     const mark = new Date();
-    const s3 = await applyLeaveDecision(actorFor(admin), request.id, "GRANT", "Approved.");
+    const s3 = await applyLeaveDecision(actorFor(admin), request.id, "GRANT", "Approved.", "", true);
     check("the Super Admin's grant is the one that counts", "ok" in s3 && s3.outcome === "granted");
     check("NOW two days leave the balance", (await consumed()) === 2);
 

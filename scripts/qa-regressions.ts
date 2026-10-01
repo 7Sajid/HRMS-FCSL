@@ -20,6 +20,7 @@ import {
   yearsSpanned,
 } from "../lib/leave";
 import { decideRequisition, fulfilRequisition } from "../lib/requisition-decide";
+import { applyLeaveDecision } from "../lib/leave-decide";
 import { enableAccountAs } from "../lib/accounts";
 import { calendarForRange, ensureEntitlements } from "../lib/leave-service";
 import { maximumLeaveDays } from "../lib/leave";
@@ -1741,6 +1742,175 @@ async function main() {
     );
   }
 
+  console.log("\n33 · The Super Admin says whether leave is paid (FCSL, 1 October 2026)");
+  {
+    // FCSL's example, through the real approval chain rather than by calling
+    // consumeEntitlement directly: "X joined 2025 January... if he takes 2 days
+    // leave and it's paid leave it will deduct 2 days from 2026. And if that
+    // leave is unpaid then nothing will be deducted."
+    const joined = calendarDate(2025, 1, 15);
+    const boss = await fixture("qa-pay-boss@qa.fcsl.invalid", "QA Pay Boss", {});
+    await prisma.user.update({ where: { id: boss.userId }, data: { role: "MANAGER" } });
+
+    const manager = {
+      userId: boss.userId,
+      role: "MANAGER" as const,
+      employeeId: boss.employeeId,
+      name: "QA Pay Boss",
+    };
+    const hrHead = { ...manager, role: "HR_HEAD" as const, name: "QA Pay HR" };
+    const superAdmin = { ...manager, role: "SUPER_ADMIN" as const, name: "QA Pay Admin" };
+
+    // Two people, same joining date, same two days off in probation. The only
+    // difference is what the Super Admin says about pay.
+    const take = async (email: string, name: string) => {
+      const person = await fixture(email, name, { joiningDate: joined, managerId: boss.employeeId });
+      const row = (await prisma.employee.findUniqueOrThrow({ where: { id: person.employeeId } }));
+      await ensureEntitlements(row, calendarDate(2025, 4, 7));
+      const planned = planLeaveDays(calendarDate(2025, 4, 7), calendarDate(2025, 4, 8), new Set());
+      const request = await prisma.leaveRequest.create({
+        data: {
+          employeeId: person.employeeId,
+          leaveTypeId: casualType.id,
+          reason: "two days in probation",
+          status: "PENDING",
+          currentStep: 0,
+          currentApproverRole: "MANAGER",
+          days: {
+            create: planned.map((day) => ({
+              employeeId: person.employeeId,
+              leaveTypeId: casualType.id,
+              date: day.date,
+              dayKind: day.dayKind,
+              lengthDays: day.lengthDays,
+            })),
+          },
+        },
+      });
+      await applyLeaveDecision(manager, request.id, "GRANT", "Fine.");
+      await applyLeaveDecision(hrHead, request.id, "GRANT", "Agreed.");
+      return { row, requestId: request.id };
+    };
+
+    const paidPerson = await take("qa-pay-paid@qa.fcsl.invalid", "QA Paid");
+    const unpaidPerson = await take("qa-pay-unpaid@qa.fcsl.invalid", "QA Unpaid");
+
+    const undecided = await applyLeaveDecision(
+      superAdmin,
+      paidPerson.requestId,
+      "GRANT",
+      "Approved.",
+    );
+    check(
+      "the last step cannot grant without saying whether it is paid",
+      "error" in undecided,
+      JSON.stringify(undecided),
+    );
+    check(
+      "and the application is untouched",
+      (await prisma.leaveRequest.findUniqueOrThrow({ where: { id: paidPerson.requestId } }))
+        .status === "PENDING",
+    );
+
+    await applyLeaveDecision(superAdmin, paidPerson.requestId, "GRANT", "Approved.", "", true);
+    await applyLeaveDecision(superAdmin, unpaidPerson.requestId, "GRANT", "Approved.", "", false);
+
+    const paidRow = await prisma.leaveRequest.findUniqueOrThrow({
+      where: { id: paidPerson.requestId },
+    });
+    const unpaidRow = await prisma.leaveRequest.findUniqueOrThrow({
+      where: { id: unpaidPerson.requestId },
+    });
+    check(
+      "both are granted, and each row says which it was",
+      paidRow.status === "GRANTED" && paidRow.paid === true &&
+        unpaidRow.status === "GRANTED" && unpaidRow.paid === false,
+      `${paidRow.paid} / ${unpaidRow.paid}`,
+    );
+
+    // The absence is recorded either way — the calendar and the attendance
+    // sheet have to show it. Only the entitlement differs.
+    check(
+      "the unpaid absence is still on the record, day for day",
+      (await prisma.leaveDay.count({ where: { leaveRequestId: unpaidPerson.requestId } })) === 2,
+    );
+    check(
+      "but it is deducted from nothing — no entitlement row was written",
+      (await prisma.leaveDayEntitlement.count({
+        where: { leaveDay: { leaveRequestId: unpaidPerson.requestId } },
+      })) === 0,
+    );
+    check(
+      "while the paid days are deducted from the first permanent year",
+      (await prisma.leaveDayEntitlement.count({
+        where: { leaveDay: { leaveRequestId: paidPerson.requestId } },
+      })) === 2,
+    );
+
+    // The year FCSL names: 2026, the first permanent one, running from the
+    // joining anniversary.
+    const firstPermanent = async (row: Awaited<ReturnType<typeof take>>["row"]) => {
+      await ensureEntitlements(row, calendarDate(2026, 6, 1));
+      const types = await leaveTypesFor(row, calendarDate(2026, 6, 1));
+      return types.find((type) => type.code === "CASUAL")?.balance.available;
+    };
+    const paidLeft = await firstPermanent(paidPerson.row);
+    const unpaidLeft = await firstPermanent(unpaidPerson.row);
+    check(
+      '"if it\'s paid leave it will deduct 2 days from 2026" — 4 of 6 left',
+      paidLeft === 4,
+      String(paidLeft),
+    );
+    check(
+      '"and if that leave is unpaid then nothing will be deducted" — all 6 left',
+      unpaidLeft === 6,
+      String(unpaidLeft),
+    );
+
+    // Leave without pay has no entitlement to pay from, so calling it paid is
+    // a record that contradicts itself.
+    const unpaidType = (await prisma.leaveType.findFirstOrThrow({ where: { code: "UNPAID" } }));
+    const lwp = await prisma.leaveRequest.create({
+      data: {
+        employeeId: paidPerson.row.id,
+        leaveTypeId: unpaidType.id,
+        reason: "no entitlement",
+        status: "PENDING",
+        currentStep: 2,
+        currentApproverRole: "SUPER_ADMIN",
+        days: {
+          create: [
+            {
+              employeeId: paidPerson.row.id,
+              leaveTypeId: unpaidType.id,
+              date: calendarDate(2026, 5, 4),
+              dayKind: "WORKING",
+              lengthDays: 1,
+            },
+          ],
+        },
+      },
+    });
+    const wrongly = await applyLeaveDecision(superAdmin, lwp.id, "GRANT", "Approved.", "", true);
+    check(
+      "leave without pay cannot be granted WITH pay",
+      "error" in wrongly && /cannot be granted with pay/.test(wrongly.error),
+      JSON.stringify(wrongly),
+    );
+    const rightly = await applyLeaveDecision(superAdmin, lwp.id, "GRANT", "Approved.", "", false);
+    check("but it grants without pay", "ok" in rightly, JSON.stringify(rightly));
+
+    check(
+      "[source] nothing is consumed unless it was granted with pay",
+      /withPay\s*\n?\s*\? await consumeEntitlement/.test(source("lib/leave-decide.ts")),
+    );
+    check(
+      "[source] and the email does not tell an unpaid person their balance moved",
+      /Nothing has come off your leave balance/.test(source("lib/leave-decide.ts")),
+    );
+  }
+
+  // ---------------------------------------------------------------------
   console.log("\n32 · No table is left open to the Data API (16 September 2026)");
   {
     // Supabase hands every table `postgres` creates to the `anon` role, so a

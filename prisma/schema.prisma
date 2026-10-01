@@ -892,6 +892,19 @@ model LeaveRequest {
 
   decidedAt DateTime? @db.Timestamptz(3)
 
+  /// Whether the Super Admin granted it WITH pay (FCSL, 1 October 2026).
+  ///
+  /// His decision on every application, from anybody — probationer, permanent,
+  /// intern. Paid leave comes off the balance; unpaid leave is recorded as an
+  /// absence and costs the person nothing, which is what makes the probation
+  /// rule work: a probationer's paid days are advanced against their first
+  /// permanent year, and their unpaid days are not.
+  ///
+  /// Null until it is granted — while it is still travelling the chain, and for
+  /// ever on anything denied or withdrawn. Backfilled to true for everything
+  /// granted before this column existed, because those all consumed balance.
+  paid Boolean?
+
   days      LeaveDay[]
   approvals LeaveApproval[]
 

@@ -200,7 +200,14 @@ async function main() {
     );
 
     const before = new Date();
-    const step3 = await applyLeaveDecision(actorFor(superAdmin), request.id, "GRANT", "Approved.");
+    const step3 = await applyLeaveDecision(
+      actorFor(superAdmin),
+      request.id,
+      "GRANT",
+      "Approved.",
+      "",
+      true,
+    );
     check("the Super Admin's grant finishes it", "ok" in step3 && step3.outcome === "granted");
     check("NOW the days come off the balance", (await consumed()) === 2);
 
