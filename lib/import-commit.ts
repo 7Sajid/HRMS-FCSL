@@ -210,10 +210,17 @@ function key(value: string): string {
 
 async function loadLookups() {
   const [branches, departments, designations, grades] = await Promise.all([
-    prisma.branch.findMany(),
-    prisma.department.findMany(),
-    prisma.designation.findMany(),
-    prisma.grade.findMany(),
+    // Closed branches and retired list entries are deliberately left out.
+    // A spreadsheet naming one is a mistake worth being told about, and the
+    // alternative is importing somebody into a grade FCSL has withdrawn.
+    //
+    // The dry run's unmatched check below reads these same lookups on purpose:
+    // if the two disagreed about what counts as a match, the dry run would be
+    // telling the HR Head something the commit then contradicts.
+    prisma.branch.findMany({ where: { closedOn: null } }),
+    prisma.department.findMany({ where: { retiredAt: null } }),
+    prisma.designation.findMany({ where: { retiredAt: null } }),
+    prisma.grade.findMany({ where: { retiredAt: null } }),
   ]);
   return {
     // Branches match on name OR code, because a spreadsheet will use whichever
@@ -226,4 +233,63 @@ async function loadLookups() {
     designation: new Map(designations.map((d) => [key(d.name), d.id])),
     grade: new Map(grades.map((g) => [key(g.name), g.id])),
   };
+}
+
+
+/**
+ * Names in the file that match nothing in the system (§12.1).
+ *
+ * The import resolves branch, department, designation and grade BY NAME, and a
+ * miss is silent: the person is created with that field empty. Across 412 rows a
+ * handful of typos would land as blanks nobody notices until somebody runs a
+ * report months later and finds people with no grade. So the dry run says so
+ * before anything is written, and the commit refuses while any remain.
+ *
+ * An empty cell is not a miss — grade, department and the rest are optional, and
+ * leaving one blank is a decision. Only a value that was typed and matches
+ * nothing is reported.
+ */
+export type Unmatched = { column: string; value: string; rows: number[] };
+
+export async function unmatchedReferences(rows: readonly CheckedRow[]): Promise<Unmatched[]> {
+  const lookups = await loadLookups();
+
+  // A manager may be somebody further down the same file, which is legitimate —
+  // the commit resolves those once everybody exists — so they count as known
+  // here too, exactly as they will there.
+  const inFile = new Set(rows.map((r) => r.employeeId).filter(Boolean));
+  const elsewhere = [
+    ...new Set(rows.map((r) => r.manager).filter((code) => Boolean(code) && !inFile.has(code))),
+  ];
+  const onRecord = elsewhere.length
+    ? await prisma.employee.findMany({
+        where: { employeeId: { in: elsewhere } },
+        select: { employeeId: true },
+      })
+    : [];
+  const managers = new Set([...inFile, ...onRecord.map((e) => e.employeeId!)]);
+
+  // Grouped by column and value rather than listed per row: one misspelled
+  // branch on 60 rows is one thing to fix, not sixty.
+  const found = new Map<string, Unmatched>();
+  const note = (column: string, value: string, row: number) => {
+    const at = `${column}\u0000${key(value)}`;
+    const seen = found.get(at);
+    if (seen) seen.rows.push(row);
+    else found.set(at, { column, value: value.trim(), rows: [row] });
+  };
+
+  for (const row of rows) {
+    if (row.branch && !lookups.branch.has(key(row.branch))) note("Branch", row.branch, row.row);
+    if (row.department && !lookups.department.has(key(row.department))) {
+      note("Department", row.department, row.row);
+    }
+    if (row.designation && !lookups.designation.has(key(row.designation))) {
+      note("Designation", row.designation, row.row);
+    }
+    if (row.grade && !lookups.grade.has(key(row.grade))) note("Grade", row.grade, row.row);
+    if (row.manager && !managers.has(row.manager)) note("Reports to", row.manager, row.row);
+  }
+
+  return [...found.values()];
 }

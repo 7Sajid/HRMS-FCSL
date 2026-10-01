@@ -18,7 +18,14 @@ export function ImportPanel() {
   const [commit, setCommit] = useState(false);
 
   const result = state && "ok" in state ? state : null;
-  const clean = result && result.problems.length === 0 && result.missingColumns.length === 0;
+  const clean =
+    result &&
+    result.problems.length === 0 &&
+    result.missingColumns.length === 0 &&
+    // An unmatched name empties a field rather than failing a row, so it has to
+    // count against "clean" here too — otherwise the screen offers a Commit the
+    // action then refuses.
+    result.unmatched.length === 0;
 
   return (
     <div className="space-y-6">
@@ -78,8 +85,12 @@ export function ImportPanel() {
               ) : (
                 <p>
                   <strong className="font-medium">
-                    {result.problems.length + result.missingColumns.length} problem
-                    {result.problems.length + result.missingColumns.length === 1 ? "" : "s"} found.
+                    {result.problems.length + result.missingColumns.length + result.unmatched.length}{" "}
+                    problem
+                    {result.problems.length + result.missingColumns.length + result.unmatched.length === 1
+                      ? ""
+                      : "s"}{" "}
+                    found.
                   </strong>{" "}
                   Nothing has been saved. Fix the spreadsheet and check it again.
                 </p>
@@ -93,6 +104,39 @@ export function ImportPanel() {
               <ul className="mt-2 list-inside list-disc text-sm text-ink-700">
                 {result.missingColumns.map((column) => (
                   <li key={column}>{column}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {result.unmatched.length > 0 && (
+            <div className="rounded-xl border border-red-300 bg-red-50/40 p-5">
+              <h3 className="text-sm font-medium text-red-700">
+                Names that match nothing in the system
+              </h3>
+              <p className="mt-1 text-xs text-ink-500">
+                {/* §12.1. These do not fail a row — they would import the person
+                    with that field empty — which is why nothing is saved until
+                    they are settled. */}
+                Each of these was typed in the file but is not on the company&rsquo;s lists. Left
+                alone, those people would be imported with the field <strong>blank</strong>. Correct
+                the spelling in the spreadsheet, or add the name in Settings, then run it again.
+              </p>
+              <ul className="mt-3 space-y-1.5 text-sm">
+                {result.unmatched.map((miss) => (
+                  <li key={`${miss.column}-${miss.value}`} className="text-ink-700">
+                    <span className="text-xs uppercase tracking-wide text-ink-400">
+                      {miss.column}
+                    </span>{" "}
+                    <strong className="font-medium text-ink-900">
+                      &ldquo;{miss.value}&rdquo;
+                    </strong>{" "}
+                    <span className="text-xs text-ink-500">
+                      — {miss.rows.length} row{miss.rows.length === 1 ? "" : "s"} (
+                      {miss.rows.slice(0, 8).join(", ")}
+                      {miss.rows.length > 8 ? ", …" : ""})
+                    </span>
+                  </li>
                 ))}
               </ul>
             </div>

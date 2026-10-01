@@ -45,6 +45,8 @@ When an account is created the person can do exactly one thing: upload their doc
 
 This is a **lock, not a hidden menu**. Hiding a nav item stops an ordinary user; it does not stop anyone determined, and an auditor will ask which of the two you built. Every page guards itself.
 
+**The import refuses a name it does not know** (FCSL, 2 October 2026). Branch, department, designation, grade and "reports to" are resolved **by name**, and a miss used to be silent — the person arrived with that field empty, which over 412 rows is a handful of blanks nobody sees until a report is run. `unmatchedReferences` now lists every typed value that matches nothing, grouped by column and value with the row numbers, and the commit is **refused** while any remain. Retired list entries and closed branches count as no match: the check and the commit read one set of lookups, so the dry run can never say something the commit then contradicts.
+
 The 412 employees imported from the existing spreadsheet enter directly at Stage 2 — they are already employed and their files already exist.
 
 ## The leave chain (§7.1)

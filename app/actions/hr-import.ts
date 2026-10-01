@@ -6,7 +6,7 @@ import { currentIp, getSessionContext } from "@/lib/auth";
 import { can } from "@/lib/permissions";
 import { parseCsv } from "@/lib/csv";
 import { checkImport, toRawRows, type RowProblem } from "@/lib/import";
-import { commitImport } from "@/lib/import-commit";
+import { commitImport, unmatchedReferences, type Unmatched } from "@/lib/import-commit";
 
 export type ImportResult =
   | {
@@ -16,6 +16,8 @@ export type ImportResult =
       problems: RowProblem[];
       unknownColumns: string[];
       missingColumns: string[];
+      /** Names typed in the file that match nothing in the system. */
+      unmatched: Unmatched[];
       alreadyPresent: string[];
       sequence?: { letter: string; nextNumber: number };
     }
@@ -71,6 +73,12 @@ export async function importEmployees(
     (r) => !presentIds.has(r.employeeId) && !presentEmails.has(r.email),
   );
 
+  // Asked of the rows that would actually be written. A name that only appears
+  // on somebody already imported is not something this run can do anything
+  // about, and reporting it would send the HR Head looking for a problem that
+  // is not in front of them.
+  const unmatched = await unmatchedReferences(toWrite);
+
   const summary = {
     ok: true as const,
     committed: false,
@@ -78,12 +86,23 @@ export async function importEmployees(
     problems: checked.problems,
     unknownColumns: checked.unknownColumns,
     missingColumns: checked.missingColumns,
+    unmatched,
     alreadyPresent,
   };
 
   if (!commit) return summary;
   if (checked.problems.length || checked.missingColumns.length) {
     return { error: "Fix every problem below before committing. Nothing has been saved." };
+  }
+  // Blocking, not warning. An unmatched name does not fail a row — it empties a
+  // field — so letting the commit through would be the one outcome nobody can
+  // see afterwards.
+  if (unmatched.length) {
+    return {
+      error:
+        "Some names in the file match nothing in the system, listed below. " +
+        "Fix the spelling, or add them in Settings first. Nothing has been saved.",
+    };
   }
   if (!toWrite.length) return { ...summary, committed: true };
 

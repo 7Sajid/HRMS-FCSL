@@ -29,7 +29,7 @@ import { releaseLetterPdf } from "../lib/pdf";
 import { compressUpload, MAX_EDGE, PORTRAIT_EDGE, savingLine } from "../lib/images";
 import sharp from "sharp";
 import { documentKey, getObject, putObject } from "../lib/storage";
-import { commitImport } from "../lib/import-commit";
+import { commitImport, unmatchedReferences } from "../lib/import-commit";
 import { BURST, SIGN_IN, isRateLimited, recordAttempt } from "../lib/rate-limit";
 import { consumeEntitlement } from "../lib/leave-service";
 import type { CheckedRow } from "../lib/import";
@@ -1908,6 +1908,131 @@ async function main() {
       "[source] and the email does not tell an unpaid person their balance moved",
       /Nothing has come off your leave balance/.test(source("lib/leave-decide.ts")),
     );
+  }
+
+  // ---------------------------------------------------------------------
+  console.log("\n34 · The dry run names what matches nothing, before anything is written (§12.1)");
+  {
+    // The import resolves branch, department, designation and grade BY NAME and a
+    // miss is silent — the person arrives with that field empty. Over 412 rows a
+    // few typos would land as blanks nobody sees until a report is run.
+    const onRecord = await fixture("qa-ref-boss@qa.fcsl.invalid", "QA Ref Boss", {
+      employeeId: "A 777 - 20 - 70",
+    });
+    const refBranch = await prisma.branch.create({
+      data: { name: "QA Ref Branch", code: "QAREF" },
+    });
+    const realGrade = (await prisma.grade.findFirstOrThrow({ where: { retiredAt: null } })).name;
+    const realDepartment = (
+      await prisma.department.findFirstOrThrow({ where: { retiredAt: null } })
+    ).name;
+
+    const refRow = (row: number, over: Partial<CheckedRow>): CheckedRow => ({
+      row,
+      employeeId: `A ${String(800 + row).padStart(3, "0")} - 20 - 70`,
+      fullName: `QA Ref ${row}`,
+      email: `qa-ref-${row}@qa.fcsl.invalid`,
+      mobile: "",
+      joiningDate: calendarDate(2020, 1, 1),
+      confirmationDate: null,
+      role: "EMPLOYEE",
+      staffType: "STAFF",
+      branch: "",
+      department: "",
+      designation: "",
+      grade: "",
+      manager: "",
+      certificateNumber: "",
+      certificateIssue: null,
+      certificateExpiry: null,
+      ...over,
+    });
+
+    try {
+      const allGood = await unmatchedReferences([
+        refRow(2, { grade: realGrade, department: realDepartment, branch: "QA Ref Branch" }),
+        // Branches match on code as well as name, because whoever fills the
+        // sheet in uses whichever they had to hand.
+        refRow(3, { branch: "QAREF" }),
+        // Blank is a decision, not a typo: these columns are optional.
+        refRow(4, {}),
+      ]);
+      check(
+        "a file naming real things, by name or by branch code, reports nothing",
+        allGood.length === 0,
+        JSON.stringify(allGood),
+      );
+
+      const typos = await unmatchedReferences([
+        refRow(2, { grade: "AR1z" }),
+        refRow(3, { grade: "AR1z" }),
+        refRow(4, { grade: "ar1z" }),
+        refRow(5, { designation: "Chief Wizard" }),
+      ]);
+      const gradeMiss = typos.find((u) => u.column === "Grade");
+      check(
+        "a misspelled grade is reported once, not once per row",
+        typos.length === 2 && gradeMiss?.rows.length === 3,
+        JSON.stringify(typos),
+      );
+      check(
+        "and it names the rows to go and look at",
+        gradeMiss?.rows.join(",") === "2,3,4" && gradeMiss?.value === "AR1z",
+        JSON.stringify(gradeMiss),
+      );
+      check(
+        "the designation is reported under its own column",
+        typos.find((u) => u.column === "Designation")?.value === "Chief Wizard",
+      );
+
+      // A withdrawn grade is worse than an unknown one: it would quietly match
+      // and import somebody into a grade FCSL has retired.
+      const retired = await prisma.grade.findFirst({ where: { retiredAt: { not: null } } });
+      if (retired) {
+        const intoRetired = await unmatchedReferences([refRow(2, { grade: retired.name })]);
+        check(
+          "a retired grade counts as no match, rather than quietly matching",
+          intoRetired.length === 1 && intoRetired[0]!.value === retired.name,
+          JSON.stringify(intoRetired),
+        );
+      }
+
+      const managers = await unmatchedReferences([
+        // Reporting to somebody further down the same file is legitimate — the
+        // commit resolves those once everybody exists.
+        refRow(2, { manager: "A 805 - 20 - 70" }),
+        refRow(5, {}),
+        // And to somebody imported in an earlier run.
+        refRow(6, { manager: "A 777 - 20 - 70" }),
+        // This one is nowhere at all.
+        refRow(7, { manager: "A 999 - 20 - 70" }),
+      ]);
+      check(
+        "a manager elsewhere in the file, or already on record, is not a miss",
+        managers.length === 1,
+        JSON.stringify(managers),
+      );
+      check(
+        "but a manager who is nowhere is reported as Reports to",
+        managers[0]?.column === "Reports to" && managers[0]?.value === "A 999 - 20 - 70",
+        JSON.stringify(managers[0]),
+      );
+
+      check(
+        "[source] the commit and the check read one set of lookups, so they cannot disagree",
+        /retiredAt: null \}/.test(source("lib/import-commit.ts")) &&
+          /unmatchedReferences/.test(source("lib/import-commit.ts")),
+      );
+      check(
+        "[source] and the commit is refused while any remain, not merely warned about",
+        /if \(unmatched\.length\) \{[\s\S]{0,200}Nothing has been saved/.test(
+          source("app/actions/hr-import.ts"),
+        ),
+      );
+    } finally {
+      await prisma.branch.deleteMany({ where: { id: refBranch.id } });
+      void onRecord;
+    }
   }
 
   // ---------------------------------------------------------------------
