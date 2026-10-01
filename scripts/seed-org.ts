@@ -25,17 +25,34 @@ const DEPARTMENTS = [
   "Digital Brokerage",
 ];
 
+// FCSL's own designations, given by FCSL on 2 October 2026, singular because a
+// designation is one person's job title. "General Manager" was missing from the
+// list FCSL sent and they added it.
+//
+// Manager and Department Head are the same rank. Every department head is a
+// manager; most managers are not department heads. Which manager heads which
+// department is NOT this list — it is Department.headId, set by the HR Head on
+// the settings screen, so a promotion changes one dropdown and no job title.
+//
+// No rank here: Designation has none, and these sort alphabetically wherever
+// they are shown.
 const DESIGNATIONS = [
-  "Managing Director",
-  "Head of Department",
-  "Divisional Manager",
-  "Branch Manager",
-  "Senior Associate",
-  "Associate",
-  "Senior Executive",
-  "Executive",
+  "Intern",
   "Junior Executive",
-  "Officer",
+  "Executive",
+  "Senior Executive",
+  "Assistant Manager",
+  "Manager",
+  "Department Head",
+  "Divisional Manager",
+  "Deputy General Manager",
+  "AGM",
+  "General Manager",
+  "Senior General Manager",
+  "CEO",
+  "COO",
+  "Deputy CEO",
+  "Deputy COO",
 ];
 
 /** rank orders reports; 1 is most senior. */
