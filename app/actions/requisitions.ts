@@ -10,9 +10,7 @@ import { can } from "@/lib/permissions";
 import { requisitionChain } from "@/lib/approval-chain";
 import { collectDetails, requisitionSpec } from "@/lib/requisitions";
 
-export type RequisitionResult = { ok: true; id: string } | { error: string };
-
-const DEFAULT_THRESHOLD = 50_000;
+export type RequisitionResult = { ok: true; id: string } | { error: string; field?: string };
 
 export async function raiseRequisition(
   _previous: unknown,
@@ -44,13 +42,23 @@ export async function raiseRequisition(
     }
   }
 
-  const setting = await prisma.setting.findUnique({
-    where: { key: "requisition.escalationThreshold" },
-  });
-  const threshold = Number(setting?.value ?? DEFAULT_THRESHOLD);
-  // §7.2: above the value FCSL sets it goes on to the Super Admin; below it,
-  // the HR Head's approval is final.
-  const chain = requisitionChain(amount !== null && amount > threshold, context.user.role);
+  // §7.2, as FCSL amended it on 1 October 2026: every requisition travels the
+  // same chain, whatever it costs.
+  const chain = requisitionChain(context.user.role);
+
+  // The HR Head names the department that will action it as they approve —
+  // except on their own requisition, which skips their desk entirely, so they
+  // name it here instead. Still the HR Head deciding, which is the rule.
+  let department: { id: string; name: string } | null = null;
+  if (context.user.role === "HR_HEAD") {
+    const wanted = String(formData.get("actionDepartmentId") ?? "").trim();
+    if (!wanted) return { error: "Say which department will action this.", field: "actionDepartmentId" };
+    department = await prisma.department.findFirst({
+      where: { id: wanted, retiredAt: null },
+      select: { id: true, name: true },
+    });
+    if (!department) return { error: "That department is not on the list any more." };
+  }
 
   const employee = context.employee;
   const ip = await currentIp();
@@ -63,10 +71,8 @@ export async function raiseRequisition(
         type,
         details,
         amount: amount === null ? null : amount.toFixed(2),
-        // Frozen here. §7.2's chain is decided by the threshold as it stood
-        // when the request was made, not by whatever it says on the day
-        // somebody gets round to approving it.
-        escalationThreshold: threshold.toFixed(2),
+        actionDepartmentId: department?.id ?? null,
+        actionDepartmentName: department?.name ?? "",
         status: "PENDING",
         currentStep: 0,
         currentApproverRole: chain[0] ?? null,
@@ -79,7 +85,7 @@ export async function raiseRequisition(
       targetType: "requisition",
       targetId: requisition.id,
       targetLabel: `${employee.fullName} — ${spec.label}`,
-      detail: { type, amount, aboveThreshold: amount !== null && amount > threshold, details },
+      detail: { type, amount, actionDepartment: department?.name, details },
       ip,
       tx,
     });

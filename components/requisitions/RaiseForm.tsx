@@ -11,14 +11,22 @@ import { ErrorBox, NoticeBox } from "@/components/ui/Feedback";
  * One form, four types. The fields change to suit the type chosen; the journey
  * afterwards is identical, which is why this is one screen and not four.
  */
-export function RaiseRequisitionForm({ threshold }: { threshold: number }) {
+export function RaiseRequisitionForm({
+  /**
+   * Non-empty only for the HR Head. Their own requisition skips their desk and
+   * goes straight to the Super Admin (§7.2), so there is no approval step at
+   * which they could name the department that will action it — they name it
+   * here. Everybody else's is named by the HR Head when they approve it.
+   */
+  departments = [],
+}: {
+  departments?: readonly { id: string; name: string }[];
+}) {
   const [state, formAction, pending] = useActionState(raiseRequisition, null);
   const [type, setType] = useState(REQUISITION_TYPES[0]!.type);
   const [amount, setAmount] = useState("");
 
   const spec = REQUISITION_TYPES.find((r) => r.type === type)!;
-  const numeric = Number(amount.replace(/,/g, ""));
-  const escalates = spec.hasAmount && Number.isFinite(numeric) && numeric > threshold;
 
   return (
     <form action={formAction} className="space-y-4">
@@ -76,12 +84,39 @@ export function RaiseRequisitionForm({ threshold }: { threshold: number }) {
         )}
       </div>
 
-      <NoticeBox tone={escalates ? "warn" : "brand"}>
+      {departments.length > 0 && (
+        <Field
+          label="Which department will action it?"
+          htmlFor="actionDepartmentId"
+          required
+          hint="Yours goes straight to the Super Admin, so say now who does the work."
+        >
+          <Select id="actionDepartmentId" name="actionDepartmentId" defaultValue="" required>
+            <option value="" disabled>
+              Choose a department…
+            </option>
+            {departments.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+      )}
+
+      <NoticeBox tone="brand">
         <p>
-          This goes to the <strong className="font-medium">HR Head</strong>
-          {escalates ? " and then to the Super Admin, because it is above ৳" : "."}
-          {escalates ? threshold.toLocaleString("en-BD") : ""}
-          {escalates ? "." : ""}
+          {departments.length > 0 ? (
+            <>
+              This goes straight to the <strong className="font-medium">Super Admin</strong>.
+            </>
+          ) : (
+            <>
+              This goes to the <strong className="font-medium">HR Head</strong>, who says which
+              department will action it, and then to the{" "}
+              <strong className="font-medium">Super Admin</strong>.
+            </>
+          )}
         </p>
         <p className="mt-1">{spec.endsWith}</p>
       </NoticeBox>

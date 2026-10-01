@@ -241,6 +241,7 @@ model Employee {
   showCauses          ShowCause[]
   exit                Exit?
   branchesManaged     Branch[]             @relation("BranchManager")
+  departmentsHeaded   Department[]         @relation("DepartmentHead")
   calendarEvents      CalendarEvent[]
 
   @@index([status, onboardingStatus])
@@ -478,18 +479,18 @@ model EmployeeDocument {
 /// for anybody else at any level, the Super Admin included. A notepad
 /// management can read is not a notepad, and people will simply not use it.
 model Note {
-  id        String   @id @default(cuid())
-  userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  body      String
+  id         String    @id @default(cuid())
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  body       String
   /// The day the note is for. A meeting in three days is written against that
   /// day, not today (FCSL, 10 September 2026).
   date       DateTime  @db.Date
   /// When that morning's reminder went into the bell. Cleared when the note is
   /// moved to another day, so it rings again on the new one.
   remindedAt DateTime? @db.Timestamptz(3)
-  createdAt DateTime @default(now()) @db.Timestamptz(3)
-  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt  DateTime  @updatedAt @db.Timestamptz(3)
 
   @@index([userId, updatedAt])
   @@index([userId, date])
@@ -535,8 +536,17 @@ model Department {
   retiredAt DateTime? @db.Timestamptz(3)
   createdAt DateTime  @default(now()) @db.Timestamptz(3)
 
-  employees   Employee[]
-  assignments EmployeeAssignment[]
+  /// Who answers for this department when an approved requisition arrives
+  /// (FCSL, 1 October 2026). The same shape as Branch.branchManagerId, and
+  /// deliberately not a role: FCSL wanted an Accounts head and an IT head, and
+  /// a role per department is a role added every time a department is, each one
+  /// needing its own line in the permission table and the leave chain.
+  headId String?
+  head   Employee? @relation("DepartmentHead", fields: [headId], references: [id], onDelete: SetNull)
+
+  employees    Employee[]
+  assignments  EmployeeAssignment[]
+  requisitions Requisition[]
 }
 
 model Designation {
@@ -758,20 +768,20 @@ enum LeaveAudience {
 }
 
 model LeaveType {
-  id        String    @id @default(cuid())
+  id        String         @id @default(cuid())
   name      String
-  code      String    @unique
+  code      String         @unique
   /// Not dated, unlike daysPerYear. Who a type is for is a property of the
   /// type; the DAYS are what changes from year to year and must still compute
   /// on last year's rule.
-  appliesTo LeaveAudience @default(ALL)
+  appliesTo LeaveAudience  @default(ALL)
   /// What this type does during somebody's probation (FCSL, 10 September
   /// 2026) — see lib/leave.ts. A property of the type, like appliesTo.
   probation ProbationLeave @default(NORMAL)
   /// Retired, never deleted — historic leave still points at it.
-  retiredAt DateTime? @db.Timestamptz(3)
-  sortOrder Int       @default(0)
-  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  retiredAt DateTime?      @db.Timestamptz(3)
+  sortOrder Int            @default(0)
+  createdAt DateTime       @default(now()) @db.Timestamptz(3)
 
   rules         LeaveTypeRule[]
   entitlements  LeaveEntitlement[]
@@ -1098,7 +1108,24 @@ model Requisition {
   ///
   /// Null on rows raised before this column existed; those fall back to the
   /// current setting, which is the best that can be said about them.
+  ///
+  /// HISTORY ONLY since 1 October 2026. FCSL decided every requisition reaches
+  /// the Super Admin whatever it costs, so nothing branches on this any more
+  /// and new rows leave it null. Kept because the rows that carry a number
+  /// travelled a chain this number chose, and a record that cannot explain its
+  /// own route is worse than a column nobody reads.
   escalationThreshold Decimal? @db.Decimal(14, 2)
+
+  /// Who actions it once the Super Admin has approved — IT hand over the
+  /// laptop, Accounts pay the money (FCSL, 1 October 2026). Chosen by the HR
+  /// Head as they approve, because they are the one step that sees every
+  /// requisition and can judge where it belongs.
+  ///
+  /// Denormalised name beside the id, like every other historical row here, so
+  /// the record still reads correctly after a department is retired or renamed.
+  actionDepartmentId   String?
+  actionDepartment     Department? @relation(fields: [actionDepartmentId], references: [id], onDelete: SetNull)
+  actionDepartmentName String      @default("")
 
   status              RequisitionStatus @default(PENDING)
   currentStep         Int               @default(0)
@@ -1113,6 +1140,8 @@ model Requisition {
 
   @@index([status, currentApproverRole, createdAt])
   @@index([raisedById, createdAt])
+  /// The department head's "waiting for you" list.
+  @@index([status, actionDepartmentId])
 }
 
 model RequisitionApproval {

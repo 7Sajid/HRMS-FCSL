@@ -105,17 +105,25 @@ describe("rule 3 — who is told on final approval", () => {
 });
 
 describe("§7.2 — the requisition route", () => {
-  it("stops at the HR Head below the threshold FCSL sets", () => {
-    expect(requisitionChain(false, "MANAGER")).toEqual(["HR_HEAD"]);
+  // FCSL, 1 October 2026: every requisition ends at the Super Admin. The
+  // ৳50,000 threshold decided nothing for three of the four types, which carry
+  // no amount at all, so he saw only the expensive ones.
+  it("sends a manager's requisition to the HR Head and then the Super Admin", () => {
+    expect(requisitionChain("MANAGER")).toEqual(["HR_HEAD", "SUPER_ADMIN"]);
   });
 
-  it("goes on to the Super Admin above it", () => {
-    expect(requisitionChain(true, "MANAGER")).toEqual(["HR_HEAD", "SUPER_ADMIN"]);
+  it("routes the same whatever it costs, including nothing", () => {
+    expect(requisitionChain("EMPLOYEE")).toEqual(["HR_HEAD", "SUPER_ADMIN"]);
+    expect(requisitionChain("HR_EXECUTIVE")).toEqual(["HR_HEAD", "SUPER_ADMIN"]);
   });
 
   it("never sends the HR Head's own requisition to the HR Head", () => {
-    // Below the threshold it would otherwise be final on their own say-so.
-    expect(requisitionChain(false, "HR_HEAD")).toEqual(["SUPER_ADMIN"]);
-    expect(requisitionChain(true, "HR_HEAD")).toEqual(["SUPER_ADMIN"]);
+    expect(requisitionChain("HR_HEAD")).toEqual(["SUPER_ADMIN"]);
+  });
+
+  it("ends at the Super Admin whoever raised it", () => {
+    for (const role of ["EMPLOYEE", "MANAGER", "HR_EXECUTIVE", "HR_HEAD"] as const) {
+      expect(requisitionChain(role).at(-1)).toBe("SUPER_ADMIN");
+    }
   });
 });

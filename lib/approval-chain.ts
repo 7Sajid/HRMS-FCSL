@@ -26,18 +26,21 @@ export const LEAVE_CHAIN: Record<Role, readonly Role[]> = {
 };
 
 /**
- * §7.2 — a requisition goes to the HR Head, and above a value FCSL sets, to
- * the Super Admin. Below that value the HR Head's approval is final.
+ * §7.2 — every requisition goes to the HR Head and then to the Super Admin
+ * (FCSL, 1 October 2026).
  *
- * The HR Head's OWN requisition skips their desk and goes to the Super Admin
- * whatever the amount, the same shape as their own leave (§7.1). Otherwise it
- * lands in their own inbox and they approve it themselves — which mattered
- * little while anybody in HR could raise one, and matters now that FCSL has
- * named the HR Head as one of only two kinds of person who can.
+ * It used to stop at the HR Head unless the amount was above a threshold FCSL
+ * set. FCSL removed that: a request for an intern or a laptop carries no
+ * amount at all, so the threshold decided nothing for three of the four types
+ * and the Super Admin saw only the expensive ones.
+ *
+ * The HR Head's OWN requisition skips their desk and goes straight to the
+ * Super Admin, the same shape as their own leave (§7.1). Otherwise it would
+ * land in their own inbox for them to approve themselves.
  */
-export function requisitionChain(aboveThreshold: boolean, raiserRole: Role): readonly Role[] {
+export function requisitionChain(raiserRole: Role): readonly Role[] {
   if (raiserRole === "HR_HEAD") return ["SUPER_ADMIN"];
-  return aboveThreshold ? ["HR_HEAD", "SUPER_ADMIN"] : ["HR_HEAD"];
+  return ["HR_HEAD", "SUPER_ADMIN"];
 }
 
 export type ChainPosition = {

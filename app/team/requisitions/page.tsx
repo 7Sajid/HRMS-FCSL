@@ -19,22 +19,39 @@ const WAITING: Record<string, string> = {
 export default async function Page() {
   const context = await requireCapability("requisitions.raise");
 
-  // §6.4 ends with somebody recording that the thing arrived. Whoever approves
-  // requisitions does it here — there is no Admin or Accounts role in this
-  // system, and an approved requisition is not in anybody's inbox any more, so
-  // without this list nothing could reach the last step at all.
+  // §6.4 ends with somebody recording that the thing arrived.
+  //
+  // Since 1 October 2026 that somebody is normally the head of the department
+  // the HR Head sent it to — IT handed over the laptop, Accounts paid the
+  // money. Whoever approves requisitions still sees all of them and can close
+  // one, because a department head on leave should not strand a delivered
+  // laptop in a list nobody is looking at.
   const canClose = can(context.viewer, "requisitions.approve");
-  const [mine, setting, awaitingDelivery] = await Promise.all([
+  const headed = await prisma.department.findMany({
+    where: { headId: context.employeeId ?? "__none__" },
+    select: { id: true, name: true },
+  });
+  const [mine, departments, awaitingDelivery] = await Promise.all([
     prisma.requisition.findMany({
       where: { raisedById: context.employeeId ?? "__none__" },
       include: { approvals: { orderBy: { step: "asc" } } },
       orderBy: { createdAt: "desc" },
       take: 50,
     }),
-    prisma.setting.findUnique({ where: { key: "requisition.escalationThreshold" } }),
-    canClose
+    // The HR Head's own requisition skips their desk, so they say who will
+    // action it here rather than at an approval step they never see.
+    context.user.role === "HR_HEAD"
+      ? prisma.department.findMany({
+          where: { retiredAt: null },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : [],
+    canClose || headed.length
       ? prisma.requisition.findMany({
-          where: { status: "APPROVED" },
+          where: canClose
+            ? { status: "APPROVED" }
+            : { status: "APPROVED", actionDepartmentId: { in: headed.map((d) => d.id) } },
           orderBy: { decidedAt: "asc" },
           take: 100,
         })
@@ -49,7 +66,7 @@ export default async function Page() {
       />
 
       <Card className="mb-8 p-6">
-        <RaiseRequisitionForm threshold={Number(setting?.value ?? 50000)} />
+        <RaiseRequisitionForm departments={departments} />
       </Card>
 
       <h2 className="mb-3 text-sm font-semibold text-ink-900">What I have raised</h2>
@@ -111,10 +128,10 @@ export default async function Page() {
         </Tbody>
       </TableShell>
 
-      {canClose && awaitingDelivery.length > 0 && (
-        <section className="mt-8">
+      {awaitingDelivery.length > 0 && (
+        <section className="mt-8" id="to-action">
           <h2 className="mb-1 text-sm font-semibold text-ink-900">
-            Approved, waiting to be delivered
+            {canClose ? "Approved, waiting to be delivered" : "Approved — waiting for your department"}
           </h2>
           <p className="mb-3 text-xs text-ink-500">
             §6.4 ends here — record what arrived, so the register says what was actually supplied
@@ -135,6 +152,7 @@ export default async function Page() {
                     {requisition.amount
                       ? ` · ৳${Number(requisition.amount).toLocaleString("en-BD")}`
                       : ""}
+                    {requisition.actionDepartmentName ? ` · ${requisition.actionDepartmentName}` : ""}
                   </p>
                 </div>
                 <MarkDelivered id={requisition.id} />

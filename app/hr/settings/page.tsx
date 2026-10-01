@@ -5,6 +5,7 @@ import { ruleOn } from "@/lib/leave";
 import { Card, PageHeader } from "@/components/ui/Card";
 import { Badge, NoticeBox } from "@/components/ui/Feedback";
 import {
+  DepartmentHeadForm,
   HolidayForm,
   LeaveAudienceForm,
   LeaveProbationForm,
@@ -18,11 +19,11 @@ import {
 
 export const metadata = { title: "Settings · FCSL HR" };
 
+// The requisition escalation threshold used to sit at the top of this list.
+// FCSL removed it on 1 October 2026 — every requisition now reaches the Super
+// Admin — and the migration deletes the row, because a number on this screen
+// that changes nothing is worse than no number at all.
 const SETTING_LABELS: Record<string, { label: string; note: string }> = {
-  "requisition.escalationThreshold": {
-    label: "Requisition escalation threshold (৳)",
-    note: "Above this a requisition goes on to the Super Admin. Below it, your approval is final.",
-  },
   "attendance.deadlineDayOfMonth": {
     label: "Attendance deadline",
     note: "Day of the following month by which branches must submit.",
@@ -65,11 +66,24 @@ export default async function Page() {
       orderBy: { sortOrder: "asc" },
     }),
     prisma.holiday.findMany({ where: { year }, orderBy: { date: "asc" } }),
-    prisma.department.findMany({ orderBy: { name: "asc" } }),
+    prisma.department.findMany({ include: { head: true }, orderBy: { name: "asc" } }),
     prisma.designation.findMany({ orderBy: { name: "asc" } }),
     prisma.grade.findMany({ orderBy: { rank: "asc" } }),
     prisma.setting.findMany({ orderBy: { key: "asc" } }),
   ]);
+
+  // Everybody who could answer for a department. Capped like every other list
+  // here (rule 7); FCSL has 412 employees, so this is a guard, not a limit.
+  const people = await prisma.employee.findMany({
+    where: { status: "ACTIVE", onboardingStatus: "APPROVED" },
+    select: { id: true, fullName: true, designation: { select: { name: true } } },
+    orderBy: { fullName: "asc" },
+    take: 500,
+  });
+  const headOptions = people.map((person) => ({
+    id: person.id,
+    name: person.designation ? `${person.fullName} · ${person.designation.name}` : person.fullName,
+  }));
 
   return (
     <main className="mx-auto max-w-4xl px-6 py-10">
@@ -233,6 +247,39 @@ export default async function Page() {
             rows={grades.map((g) => ({ id: g.id, name: g.name, retired: Boolean(g.retiredAt) }))}
           />
         </div>
+      </section>
+
+      <section className="mb-10">
+        <h2 className="mb-1 text-sm font-semibold text-ink-900">Who actions a requisition</h2>
+        <p className="mb-3 text-xs text-ink-500">
+          {/* §7.2 as amended on 1 October 2026. */}
+          When you approve a requisition you say which department will action it. Once the Super
+          Admin gives the final approval, the person named here is told, sees it on their
+          Requisitions page, and marks it done when the thing has actually arrived. A department
+          with nobody named still works — the requisition is approved and waits with you.
+        </p>
+        <Card className="divide-y divide-ink-300/20">
+          {departments
+            .filter((department) => !department.retiredAt)
+            .map((department) => (
+              <div
+                key={department.id}
+                className="flex flex-wrap items-center justify-between gap-3 px-5 py-3"
+              >
+                <div className="min-w-0">
+                  <p className="text-sm text-ink-900">{department.name}</p>
+                  <p className="text-xs text-ink-500">
+                    {department.head ? `Headed by ${department.head.fullName}` : "Nobody named yet"}
+                  </p>
+                </div>
+                <DepartmentHeadForm
+                  departmentId={department.id}
+                  currentHeadId={department.headId}
+                  people={headOptions}
+                />
+              </div>
+            ))}
+        </Card>
       </section>
 
       <section>

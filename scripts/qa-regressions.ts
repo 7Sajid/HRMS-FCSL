@@ -19,7 +19,7 @@ import {
   leaveYearsSpanned,
   yearsSpanned,
 } from "../lib/leave";
-import { decideRequisition } from "../lib/requisition-decide";
+import { decideRequisition, fulfilRequisition } from "../lib/requisition-decide";
 import { enableAccountAs } from "../lib/accounts";
 import { calendarForRange, ensureEntitlements } from "../lib/leave-service";
 import { maximumLeaveDays } from "../lib/leave";
@@ -72,6 +72,9 @@ function check(label: string, condition: boolean, detail = "") {
  *  are gone: `LeaveRequest.leaveType` is onDelete: Restrict on purpose, so a
  *  leave type cannot be removed while any leave still points at it. */
 let regressionLeaveTypeId: string | null = null;
+/** Section 17's department, cleared in the `finally` by exact id. */
+const QA_DEPARTMENT = "QA Regression Department";
+let requisitionDepartmentId: string | null = null;
 /** The carry-forward check's own leave type, cleared the same way. */
 let carryLeaveTypeId: string | null = null;
 
@@ -114,6 +117,9 @@ async function main() {
   // unique. Cleared by that exact code, never by a predicate that could match
   // a leave type the HR Head entered.
   await prisma.leaveType.deleteMany({ where: { code: { in: ["QA_REG", "QA_REG_CARRY"] } } });
+  // Same again for section 17's department, whose name is unique: a leftover
+  // would fail the create rather than being quietly reused.
+  await prisma.department.deleteMany({ where: { name: QA_DEPARTMENT } });
 
   // ---------------------------------------------------------------------
   console.log("\n1 · A person who has left cannot sign in (§6.6)");
@@ -774,64 +780,160 @@ async function main() {
   );
 
   // ---------------------------------------------------------------------
-  console.log("\n17 · A requisition keeps the chain it was raised under (§7.2)");
+  console.log("\n17 · Every requisition reaches the Super Admin, and somebody actions it (§7.2)");
   // ---------------------------------------------------------------------
-  const setting = await prisma.setting.findUnique({
-    where: { key: "requisition.escalationThreshold" },
-  });
-  const originalThreshold = setting?.value ?? "50000";
-  await prisma.setting.upsert({
-    where: { key: "requisition.escalationThreshold" },
-    update: { value: "50000" },
-    create: { key: "requisition.escalationThreshold", value: "50000" },
-  });
+  // FCSL, 1 October 2026. The ৳50,000 threshold is gone: it decided nothing
+  // for three of the four types, which carry no amount at all, so the Super
+  // Admin saw only the expensive ones. And an approval is no longer where a
+  // requisition ends — the HR Head names a department on the way up, and that
+  // department's head closes it when the thing has actually arrived.
+  const reqRaiser = await fixture("qa-reg-raiser@qa.fcsl.invalid", "QA Raiser", {});
+  const reqHead = await fixture("qa-reg-hrhead@qa.fcsl.invalid", "QA HR Head", {});
+  const reqIt = await fixture("qa-reg-ithead@qa.fcsl.invalid", "QA IT Head", {});
+  // The notification check below asks who holds the HR_HEAD role, so one of
+  // these fixtures has to actually hold it.
+  await prisma.user.update({ where: { id: reqHead.userId }, data: { role: "HR_HEAD" } });
 
-  const raiser = await fixture("qa-reg-raiser@qa.fcsl.invalid", "QA Raiser", {});
-  const headOfHr = await fixture("qa-reg-hrhead@qa.fcsl.invalid", "QA HR Head", {});
-  const bigOne = await prisma.requisition.create({
+  const itDepartment = await prisma.department.create({
+    data: { name: QA_DEPARTMENT, headId: reqIt.employeeId },
+  });
+  requisitionDepartmentId = itDepartment.id;
+
+  // No amount at all — the case the old threshold could never route.
+  const laptop = await prisma.requisition.create({
     data: {
-      raisedById: raiser.employeeId,
+      raisedById: reqRaiser.employeeId,
       raisedByName: "QA Raiser",
-      type: "MONEY_EXPENSE",
-      details: { purpose: "regression" },
-      amount: "60000.00",
-      // Raised under 50,000, so it needs the Super Admin after the HR Head.
-      escalationThreshold: "50000.00",
+      type: "IT_EQUIPMENT",
+      details: { item: "One laptop" },
       status: "PENDING",
       currentStep: 0,
       currentApproverRole: "HR_HEAD",
     },
   });
 
-  // HR moves the threshold while it waits in the inbox.
-  await prisma.setting.update({
-    where: { key: "requisition.escalationThreshold" },
-    data: { value: "100000" },
-  });
-  const passedOn = await decideRequisition(
-    { userId: headOfHr.userId, role: "HR_HEAD", employeeId: headOfHr.employeeId, name: "QA HR Head" },
-    bigOne.id,
+  const headActor = {
+    userId: reqHead.userId,
+    role: "HR_HEAD" as const,
+    employeeId: reqHead.employeeId,
+    name: "QA HR Head",
+  };
+  const adminActor = {
+    userId: reqHead.userId,
+    role: "SUPER_ADMIN" as const,
+    employeeId: reqHead.employeeId,
+    name: "QA Super Admin",
+  };
+
+  const noDepartment = await decideRequisition(headActor, laptop.id, "APPROVE", "Fine.");
+  check(
+    "the HR Head cannot approve without saying who will action it",
+    "error" in noDepartment,
+    JSON.stringify(noDepartment),
+  );
+  check(
+    "and nothing moved",
+    (await prisma.requisition.findUniqueOrThrow({ where: { id: laptop.id } }))
+      .currentApproverRole === "HR_HEAD",
+  );
+
+  const named = await decideRequisition(
+    headActor,
+    laptop.id,
     "APPROVE",
-    "Regression approval",
+    "Fine.",
+    "",
+    itDepartment.id,
   );
-  const afterHead = await prisma.requisition.findUnique({ where: { id: bigOne.id } });
+  const afterHead = await prisma.requisition.findUniqueOrThrow({ where: { id: laptop.id } });
   check(
-    "the HR Head's approval passes it on rather than finishing it",
-    "ok" in passedOn && passedOn.outcome === "passed",
-    "ok" in passedOn ? passedOn.outcome : passedOn.error,
+    "a requisition with no amount still goes on to the Super Admin",
+    "ok" in named && named.outcome === "passed" && afterHead.currentApproverRole === "SUPER_ADMIN",
+    "ok" in named ? named.outcome : named.error,
   );
   check(
-    "and it is still waiting with the Super Admin, as it was when raised",
-    afterHead?.status === "PENDING" && afterHead?.currentApproverRole === "SUPER_ADMIN",
-    `${afterHead?.status} / ${afterHead?.currentApproverRole}`,
+    "the department is written onto the row, name and all",
+    afterHead.actionDepartmentId === itDepartment.id &&
+      afterHead.actionDepartmentName === QA_DEPARTMENT,
+    `${afterHead.actionDepartmentId} / ${afterHead.actionDepartmentName}`,
   );
-  await prisma.setting.update({
-    where: { key: "requisition.escalationThreshold" },
-    data: { value: originalThreshold },
+
+  const beforeFinal = new Date();
+  await decideRequisition(adminActor, laptop.id, "APPROVE", "Approved.");
+  const toldAbout = await prisma.notification.findMany({
+    where: { createdAt: { gte: beforeFinal } },
+    select: { userId: true },
+  });
+  const timesTold = (userId: string) => toldAbout.filter((n) => n.userId === userId).length;
+  check("the raiser is told", timesTold(reqRaiser.userId) === 1, String(timesTold(reqRaiser.userId)));
+  check("the HR Head is told", timesTold(reqHead.userId) === 1, String(timesTold(reqHead.userId)));
+  check(
+    "and so is the head of the department that now has to do something",
+    timesTold(reqIt.userId) === 1,
+    String(timesTold(reqIt.userId)),
+  );
+
+  const byStranger = await fulfilRequisition(
+    { userId: reqRaiser.userId, role: "EMPLOYEE", employeeId: reqRaiser.employeeId, name: "QA Raiser" },
+    laptop.id,
+    "",
+    false,
+  );
+  check("somebody with no claim on it cannot close it", "error" in byStranger);
+
+  const byDepartmentHead = await fulfilRequisition(
+    { userId: reqIt.userId, role: "EMPLOYEE", employeeId: reqIt.employeeId, name: "QA IT Head" },
+    laptop.id,
+    "Handed over",
+    false,
+  );
+  check(
+    "the department head closes it, holding no approval capability at all",
+    "ok" in byDepartmentHead,
+    JSON.stringify(byDepartmentHead),
+  );
+  check(
+    "and it is delivered",
+    (await prisma.requisition.findUniqueOrThrow({ where: { id: laptop.id } })).status === "FULFILLED",
+  );
+
+  // One person, two reasons to be told, one bell item. A department head who
+  // raises a requisition for their own department is the ordinary case of it.
+  await prisma.department.update({
+    where: { id: itDepartment.id },
+    data: { headId: reqRaiser.employeeId },
+  });
+  const ownRequest = await prisma.requisition.create({
+    data: {
+      raisedById: reqRaiser.employeeId,
+      raisedByName: "QA Raiser",
+      type: "OFFICE_SUPPLIES",
+      details: { item: "Printer paper", quantity: "20" },
+      status: "PENDING",
+      currentStep: 0,
+      currentApproverRole: "HR_HEAD",
+    },
+  });
+  await decideRequisition(headActor, ownRequest.id, "APPROVE", "Fine.", "", itDepartment.id);
+  const beforeSecond = new Date();
+  await decideRequisition(adminActor, ownRequest.id, "APPROVE", "Approved.");
+  const secondRound = await prisma.notification.findMany({
+    where: { createdAt: { gte: beforeSecond }, userId: reqRaiser.userId },
   });
   check(
-    "[source] the threshold is frozen onto the row when it is raised",
-    /escalationThreshold: threshold\.toFixed\(2\)/.test(source("app/actions/requisitions.ts")),
+    "raiser and department head in one person is told once, not twice",
+    secondRound.length === 1,
+    String(secondRound.length),
+  );
+
+  check(
+    "[source] the route is decided by who raised it and nothing else",
+    /requisitionChain\(raiserRole: Role\)/.test(source("lib/approval-chain.ts")),
+  );
+  check(
+    "[source] no screen reads the retired threshold any more",
+    !/escalationThreshold/.test(source("app/actions/requisitions.ts")) &&
+      !/escalationThreshold/.test(source("components/approvals/RequisitionInbox.tsx")),
   );
 
   // ---------------------------------------------------------------------
@@ -1739,6 +1841,11 @@ main()
     }
     if (carryLeaveTypeId) {
       await prisma.leaveType.deleteMany({ where: { id: carryLeaveTypeId } });
+    }
+    // After cleanFixtures: the employees cascade their requisitions away first,
+    // so nothing is left pointing here.
+    if (requisitionDepartmentId) {
+      await prisma.department.deleteMany({ where: { id: requisitionDepartmentId } });
     }
     console.log(`\n${passed} passed, ${failed} failed  (${toISODate(todayInDhaka())})\n`);
     if (failed) process.exitCode = 1;

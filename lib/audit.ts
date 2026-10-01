@@ -108,6 +108,7 @@ export type AuditAction =
   | "showcause.replied"
   | "showcause.closed"
   // Organisation and settings
+  | "department.head_set"
   | "branch.created"
   | "branch.updated"
   | "branch.closed"
@@ -208,6 +209,7 @@ export const ACTION_LABELS: Record<AuditAction, string> = {
   "showcause.replied": "Show-cause reply submitted",
   "showcause.closed": "Show-cause closed",
 
+  "department.head_set": "Department head set",
   "branch.created": "Branch created",
   "branch.updated": "Branch details changed",
   "branch.closed": "Branch closed",
@@ -335,6 +337,7 @@ export const ACTION_GROUPS: { label: string; actions: AuditAction[] }[] = [
       "branch.closed",
       "orglist.created",
       "orglist.retired",
+      "department.head_set",
       "settings.updated",
       "leavetype.created",
       "leavetype.rule_added",

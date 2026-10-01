@@ -8,7 +8,10 @@ import { DecideRequisition } from "./DecideRequisition";
 import type { Role } from "@prisma/client";
 
 export async function RequisitionInbox({ actorRole }: { actorRole: Role }) {
-  const [requisitions, setting] = await Promise.all([
+  // The HR Head names the department that will action each one as they approve
+  // it (FCSL, 1 October 2026), so their inbox needs the list. Nobody else does:
+  // the Super Admin reads the name the HR Head already chose.
+  const [requisitions, departments] = await Promise.all([
     prisma.requisition.findMany({
       where: { status: "PENDING", currentApproverRole: actorRole },
       include: {
@@ -17,12 +20,17 @@ export async function RequisitionInbox({ actorRole }: { actorRole: Role }) {
       },
       orderBy: { createdAt: "asc" },
     }),
-    prisma.setting.findUnique({ where: { key: "requisition.escalationThreshold" } }),
+    actorRole === "HR_HEAD"
+      ? prisma.department.findMany({
+          where: { retiredAt: null },
+          select: { id: true, name: true },
+          orderBy: { name: "asc" },
+        })
+      : [],
   ]);
 
   if (!requisitions.length) return <EmptyState>No requisitions are waiting with you.</EmptyState>;
 
-  const threshold = Number(setting?.value ?? 50000);
   const today = todayInDhaka();
   const escalateAfter = await escalateAfterWorkingDays();
   const rows = byLongestWaiting(requisitions, (r) => r.createdAt, today);
@@ -51,8 +59,8 @@ export async function RequisitionInbox({ actorRole }: { actorRole: Role }) {
                       ৳{amount.toLocaleString("en-BD")}
                     </span>
                   )}
-                  {amount !== null && amount > threshold && (
-                    <Badge tone="warn">Goes on to the Super Admin</Badge>
+                  {requisition.actionDepartmentName && (
+                    <Badge tone="brand">{requisition.actionDepartmentName} actions it</Badge>
                   )}
                   {overdue && <Badge tone="warn">Waiting {waited} working days</Badge>}
                 </div>
@@ -87,7 +95,9 @@ export async function RequisitionInbox({ actorRole }: { actorRole: Role }) {
 
               <DecideRequisition
                 id={requisition.id}
-                isFinalStep={amount === null || amount <= threshold || actorRole === "SUPER_ADMIN"}
+                isFinalStep={actorRole === "SUPER_ADMIN"}
+                departments={departments}
+                assignedDepartment={requisition.actionDepartmentName}
               />
             </div>
           </Card>

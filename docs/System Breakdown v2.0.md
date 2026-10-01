@@ -346,7 +346,7 @@ One form, four types. The form changes to suit the type chosen, but the journey 
 
 |  |
 | :-: |
-| **DECIDED — WHO MAY RAISE ONE****Managers, department heads and the HR Head only** *(amended by FCSL, 10 September 2026)*. Executives, Associates and HR Executives cannot raise a requisition — they ask their manager, who raises it on their behalf. The requisition then goes from the manager to the HR Head, and above a value FCSL sets, to the Super Admin. The HR Head's own requisition goes straight to the Super Admin. The requester watches it move through those steps on their own screen and is told the moment it is decided, which removes the follow-up phone calls that make up most of the delay in a paper process. |
+| **DECIDED — WHO MAY RAISE ONE****Managers, department heads and the HR Head only** *(amended by FCSL, 10 September 2026)*. Executives, Associates and HR Executives cannot raise a requisition — they ask their manager, who raises it on their behalf. The requisition then goes from the manager to the HR Head and on to the Super Admin — **every one of them**, whatever it costs *(amended by FCSL, 1 October 2026; the ৳50,000 escalation threshold is withdrawn, having decided nothing for the three types that carry no amount)*. The HR Head's own requisition goes straight to the Super Admin. The requester watches it move through those steps on their own screen and is told the moment it is decided, which removes the follow-up phone calls that make up most of the delay in a paper process. |
 
 ### **6.5   Compliance and show-cause letters**
 
@@ -489,7 +489,7 @@ Had the manager pressed **Deny** on Monday afternoon, the story would have ended
 | :-: | :-: |
 | **What** | **The route** |
 | **A new person's documents** | The person uploads → **HR Executive or HR Head** approves. Done. The exception is the HR Head's own documents, which go to the Super Admin. |
-| **Requisition** | Raised by a manager, department head or the HR Head → **HR Head** → **Super Admin**, but only if it is above the value FCSL sets. Below that value the HR Head's approval is final. The HR Head's own requisition goes straight to the **Super Admin**. Executives, Associates and HR Executives cannot raise one. |
+| **Requisition** | Raised by a manager, department head or the HR Head → **HR Head** → **Super Admin**. Every requisition travels the whole chain, whatever it costs *(amended by FCSL, 1 October 2026)*. As the HR Head approves, they name the **department that will action it** — IT hand over the laptop, Accounts pay the money. When the Super Admin gives the final approval, the person who raised it, the HR Head and that department's head are told together, and the department head marks it delivered when the thing has actually arrived. A department head is a **manager with one more list**, not a new kind of user. The HR Head's own requisition goes straight to the **Super Admin**, so they name the department when raising it. Executives, Associates and HR Executives cannot raise one. |
 | **Branch attendance sheet** | Branch manager submits → **HR verifies and corrects** → HR publishes → every employee in that branch can see their own month. |
 
 ### **7.3   What happens when nobody responds**

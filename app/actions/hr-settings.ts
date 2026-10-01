@@ -442,3 +442,68 @@ export async function saveSetting(key: string, value: string): Promise<SettingsR
   revalidatePath("/hr/settings");
   return { ok: true };
 }
+
+/**
+ * Who answers for a department when an approved requisition arrives
+ * (FCSL, 1 October 2026).
+ *
+ * The HR Head's to set, because they are the one who names the department on
+ * each requisition and so the one who finds out first when a department has
+ * nobody behind it.
+ *
+ * Deliberately not restricted to managers. FCSL's Accounts and IT heads are
+ * managers today, but a rule that only a MANAGER may head a department would
+ * be a second place where "who is senior" is decided, disagreeing with
+ * lib/permissions.ts the first time somebody is promoted on one screen and not
+ * the other. The head gets no new powers from this — only this department's
+ * approved requisitions.
+ */
+export async function setDepartmentHead(
+  departmentId: string,
+  employeeId: string | null,
+): Promise<SettingsResult> {
+  const guard = await requireHrHead();
+  if (!guard.ok) return { error: guard.error };
+  const { context } = guard;
+
+  const department = await prisma.department.findUnique({
+    where: { id: departmentId },
+    include: { head: { select: { fullName: true } } },
+  });
+  if (!department) return { error: "Unknown department." };
+  if (department.retiredAt) return { error: "That department is retired." };
+  if (department.headId === employeeId) return { ok: true };
+
+  let incoming: { id: string; fullName: string } | null = null;
+  if (employeeId) {
+    incoming = await prisma.employee.findFirst({
+      where: { id: employeeId, status: "ACTIVE", onboardingStatus: "APPROVED" },
+      select: { id: true, fullName: true },
+    });
+    // Somebody who has left, or who is still behind the locked door, cannot be
+    // the person an approved requisition waits on.
+    if (!incoming) return { error: "That person is not an active, approved employee." };
+  }
+
+  const actorName = context.employee?.fullName ?? context.user.email;
+  await prisma.$transaction(async (tx) => {
+    await tx.department.update({
+      where: { id: departmentId },
+      data: { headId: incoming?.id ?? null },
+    });
+    await record({
+      action: "department.head_set",
+      actor: actorFrom({ id: context.user.id, fullName: actorName, role: context.user.role }),
+      targetType: "department",
+      targetId: department.id,
+      targetLabel: department.name,
+      detail: { from: department.head?.fullName ?? null, to: incoming?.fullName ?? null },
+      ip: await currentIp(),
+      tx,
+    });
+  });
+
+  revalidatePath("/hr/settings");
+  revalidatePath("/team/requisitions");
+  return { ok: true };
+}

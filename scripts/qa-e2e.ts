@@ -23,7 +23,7 @@ import {
 } from "../lib/leave";
 import { applyLeaveDecision } from "../lib/leave-decide";
 import { chainStart, canDecideAt } from "../lib/approval-chain";
-import { decideRequisition } from "../lib/requisition-decide";
+import { decideRequisition, fulfilRequisition } from "../lib/requisition-decide";
 import { prefillMonth, canSubmit, isLockedMark } from "../lib/attendance";
 import { certificateStatus } from "../lib/certificate";
 import { exitBlockers, purgeDateFor, CLEARANCE_CHECKLIST } from "../lib/exit";
@@ -68,6 +68,8 @@ function section(title: string) {
 
 const madeUsers: string[] = [];
 const madeBranches: string[] = [];
+const madeDepartments: string[] = [];
+const E2E_DEPARTMENT = "E2E IT";
 const madeTerminals: string[] = [];
 const madeLeaveTypes: string[] = [];
 
@@ -110,6 +112,11 @@ const actorFor = (p: { user: { id: string; role: Role }; employee: { id: string;
 
 async function main() {
   await cleanFixtures();
+  // A run that died before its `finally` leaves this behind, and the name is
+  // unique — so the next run would fail on the create rather than on anything
+  // it set out to check. Cleared by that exact name, never by a predicate that
+  // could match a department FCSL entered.
+  await prisma.department.deleteMany({ where: { name: E2E_DEPARTMENT } });
   const today = todayInDhaka();
   const year = today.getUTCFullYear();
 
@@ -659,12 +666,7 @@ async function main() {
     check("HR publishes it", true);
 
     // =======================================================================
-    section("8 · A requisition, escalated on value (§6.4)");
-
-    const thresholdSetting = await prisma.setting.findUnique({
-      where: { key: "requisition.escalationThreshold" },
-    });
-    const threshold = Number(thresholdSetting?.value ?? 50000);
+    section("8 · A requisition, and the department that actions it (§6.4, §7.2)");
 
     check(
       "an employee cannot raise one — they ask their manager",
@@ -672,50 +674,77 @@ async function main() {
     );
     check("their manager can", can({ id: boss.user.id, role: "MANAGER" }, "requisitions.raise"));
 
-    const small = await prisma.requisition.create({
-      data: {
-        raisedById: boss.employee.id,
-        raisedByName: "E2E Boss",
-        type: "OFFICE_SUPPLIES",
-        details: { item: "Printer paper", quantity: "20 reams" },
-        amount: threshold - 1000,
-        currentStep: 0,
-        currentApproverRole: "HR_HEAD",
-      },
+    // FCSL, 1 October 2026: the IT head is a manager with one more list, not a
+    // role. E2E Boss heads IT here, so the laptop request comes back to them.
+    const itDepartment = await prisma.department.create({
+      data: { name: E2E_DEPARTMENT, headId: boss.employee.id },
     });
-    const smallDecided = await decideRequisition(actorFor(head), small.id, "APPROVE", "Fine.");
-    check(
-      "below the threshold the HR Head's approval is final",
-      "ok" in smallDecided,
-      JSON.stringify(smallDecided),
-    );
-    check(
-      "and it is finished",
-      (await prisma.requisition.findUniqueOrThrow({ where: { id: small.id } })).status === "APPROVED",
-    );
+    madeDepartments.push(itDepartment.id);
 
-    const big = await prisma.requisition.create({
+    const kit = await prisma.requisition.create({
       data: {
         raisedById: boss.employee.id,
         raisedByName: "E2E Boss",
         type: "IT_EQUIPMENT",
         details: { item: "Six trading workstations" },
-        amount: threshold + 100000,
         currentStep: 0,
         currentApproverRole: "HR_HEAD",
       },
     });
-    await decideRequisition(actorFor(head), big.id, "APPROVE", "Needed.");
-    const escalated = await prisma.requisition.findUniqueOrThrow({ where: { id: big.id } });
+
+    const unnamed = await decideRequisition(actorFor(head), kit.id, "APPROVE", "Needed.");
     check(
-      "above it, the HR Head's approval passes it to the Super Admin",
+      "the HR Head cannot approve without saying who will action it",
+      "error" in unnamed,
+      JSON.stringify(unnamed),
+    );
+
+    await decideRequisition(actorFor(head), kit.id, "APPROVE", "Needed.", "", itDepartment.id);
+    const escalated = await prisma.requisition.findUniqueOrThrow({ where: { id: kit.id } });
+    check(
+      "naming it passes it to the Super Admin — every requisition reaches him now",
       escalated.status === "PENDING" && escalated.currentApproverRole === "SUPER_ADMIN",
       `${escalated.status} / ${escalated.currentApproverRole}`,
     );
-    await decideRequisition(actorFor(admin), big.id, "APPROVE", "Approved.");
     check(
-      "who finishes it",
-      (await prisma.requisition.findUniqueOrThrow({ where: { id: big.id } })).status === "APPROVED",
+      "and the department travels with it",
+      escalated.actionDepartmentName === E2E_DEPARTMENT,
+      escalated.actionDepartmentName,
+    );
+
+    await decideRequisition(actorFor(admin), kit.id, "APPROVE", "Approved.");
+    const approvedKit = await prisma.requisition.findUniqueOrThrow({ where: { id: kit.id } });
+    check("the Super Admin finishes the approval", approvedKit.status === "APPROVED");
+
+    const toldAboutKit = await prisma.notification.findMany({
+      where: { createdAt: { gte: approvedKit.decidedAt ?? new Date(0) } },
+      select: { userId: true, title: true },
+    });
+    check(
+      "the raiser is told",
+      toldAboutKit.some((n) => n.userId === boss.user.id),
+    );
+    check(
+      "and so is the HR Head",
+      toldAboutKit.some((n) => n.userId === head.user.id),
+    );
+
+    const closedByStranger = await fulfilRequisition(actorFor(exec), kit.id, "", false);
+    check(
+      "somebody with no claim on it cannot close it",
+      "error" in closedByStranger,
+      JSON.stringify(closedByStranger),
+    );
+
+    const closedByHead = await fulfilRequisition(actorFor(boss), kit.id, "Handed over", false);
+    check(
+      "the department head closes it without approving anything",
+      "ok" in closedByHead,
+      JSON.stringify(closedByHead),
+    );
+    check(
+      "and it is delivered",
+      (await prisma.requisition.findUniqueOrThrow({ where: { id: kit.id } })).status === "FULFILLED",
     );
 
     // =======================================================================
@@ -978,9 +1007,11 @@ async function main() {
     await prisma.employeeAssignment.deleteMany({ where: { employee: { userId: { in: madeUsers } } } });
     await prisma.reminderState.deleteMany({ where: { key: { contains: "e2e" } } });
     await prisma.branch.updateMany({ where: { id: { in: madeBranches } }, data: { branchManagerId: null } });
+    await prisma.department.updateMany({ where: { id: { in: madeDepartments } }, data: { headId: null } });
     await prisma.employee.deleteMany({ where: { userId: { in: madeUsers } } });
     await prisma.user.deleteMany({ where: { id: { in: madeUsers } } });
     await prisma.branch.deleteMany({ where: { id: { in: madeBranches } } });
+    await prisma.department.deleteMany({ where: { id: { in: madeDepartments } } });
   }
 
   console.log(`\n${"─".repeat(60)}`);

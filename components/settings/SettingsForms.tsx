@@ -10,6 +10,7 @@ import {
   saveLeaveRule,
   saveOrgItem,
   saveSetting,
+  setDepartmentHead,
   setLeaveTypeAudience,
   setLeaveTypeProbation,
 } from "@/app/actions/hr-settings";
@@ -400,6 +401,59 @@ export function SettingRow({
       >
         {pending ? "…" : saved && next === value ? "Saved" : "Save"}
       </Button>
+    </div>
+  );
+}
+
+
+/**
+ * Who answers for a department when an approved requisition lands on it
+ * (FCSL, 1 October 2026).
+ *
+ * Saves on change rather than behind a button, like the probation select above
+ * it: one field, one decision, and a Save button beside a single dropdown only
+ * adds a way to think you have changed something when you have not.
+ */
+export function DepartmentHeadForm({
+  departmentId,
+  currentHeadId,
+  people,
+}: {
+  departmentId: string;
+  currentHeadId: string | null;
+  people: readonly { id: string; name: string }[];
+}) {
+  const router = useRouter();
+  const [pending, start] = useTransition();
+  const [error, setError] = useState("");
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <Select
+        id={`head-${departmentId}`}
+        className="w-auto py-1.5 text-xs"
+        defaultValue={currentHeadId ?? ""}
+        disabled={pending}
+        onChange={(event) => {
+          const value = event.target.value;
+          start(async () => {
+            const result = await setDepartmentHead(departmentId, value || null);
+            if (result && "error" in result) setError(result.error);
+            else {
+              setError("");
+              router.refresh();
+            }
+          });
+        }}
+      >
+        <option value="">Nobody yet</option>
+        {people.map((person) => (
+          <option key={person.id} value={person.id}>
+            {person.name}
+          </option>
+        ))}
+      </Select>
+      {error && <span className="text-xs text-red-600">{error}</span>}
     </div>
   );
 }

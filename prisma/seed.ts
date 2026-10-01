@@ -83,11 +83,6 @@ const LEAVE_TYPES = [
 
 const SETTINGS = [
   {
-    key: "requisition.escalationThreshold",
-    value: "50000",
-    note: "Taka. Above this a requisition goes to the Super Admin (§7.2).",
-  },
-  {
     key: "attendance.deadlineDayOfMonth",
     value: "5",
     note: "Branch sheets are due by this day of the following month (§6.3).",
