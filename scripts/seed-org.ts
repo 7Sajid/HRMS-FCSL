@@ -12,16 +12,17 @@ import { args, finish, prisma } from "./_cli";
  *   npm run hrm:org -- --seed  add the defaults, skipping anything present
  */
 
+// FCSL's own six, given by FCSL on 1 October 2026. These are no longer a
+// guess: the nine placeholders that stood here before were renamed and retired
+// by 20261001140000_fcsl_departments, which is what brings an existing database
+// to this list.
 const DEPARTMENTS = [
-  "Trading",
-  "Research",
-  "Operations & Settlement",
-  "Accounts & Finance",
-  "Information Technology",
-  "Human Resources & Admin",
-  "Compliance",
-  "Branch Operations",
-  "Marketing & Business Development",
+  "Accounts",
+  "IT",
+  "HR and Compliance",
+  "CDS",
+  "Operations",
+  "Digital Brokerage",
 ];
 
 const DESIGNATIONS = [
