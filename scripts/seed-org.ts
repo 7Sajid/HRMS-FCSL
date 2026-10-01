@@ -39,13 +39,36 @@ const DESIGNATIONS = [
 ];
 
 /** rank orders reports; 1 is most senior. */
+// FCSL's own grades, given by FCSL on 2 October 2026. Three AR levels and four
+// AD levels, each with an a, b and c. These are real, not a guess — FCSL stated
+// there are no others.
+//
+// The numbers are SENIORITY, and they are PROVISIONAL: they follow the order
+// FCSL listed the grades in, because the only thing rank does is stop
+// "headcount by grade" sorting alphabetically. FCSL has not yet said which end
+// is the top. Correcting it is one UPDATE per grade, nothing else reads it.
 const GRADES: [string, number][] = [
-  ["Top Management", 1],
-  ["Grade 1", 2],
-  ["Grade 2", 3],
-  ["Grade 3", 4],
-  ["Grade 4", 5],
-  ["Support Executive", 6],
+  ["AR1a", 1],
+  ["AR1b", 2],
+  ["AR1c", 3],
+  ["AR2a", 4],
+  ["AR2b", 5],
+  ["AR2c", 6],
+  ["AR3a", 7],
+  ["AR3b", 8],
+  ["AR3c", 9],
+  ["AD1a", 10],
+  ["AD1b", 11],
+  ["AD1c", 12],
+  ["AD2a", 13],
+  ["AD2b", 14],
+  ["AD2c", 15],
+  ["AD3a", 16],
+  ["AD3b", 17],
+  ["AD3c", 18],
+  ["AD4a", 19],
+  ["AD4b", 20],
+  ["AD4c", 21],
 ];
 
 async function list() {
