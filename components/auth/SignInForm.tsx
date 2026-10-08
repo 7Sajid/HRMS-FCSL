@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { signIn } from "@/app/actions/auth";
 import { Button } from "@/components/ui/Button";
 import { Field, Input } from "@/components/ui/Field";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { ErrorBox } from "@/components/ui/Feedback";
 
 export function SignInForm() {
@@ -30,10 +31,9 @@ export function SignInForm() {
       </Field>
 
       <Field label="Password" htmlFor="password" required>
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="current-password"
           required
         />

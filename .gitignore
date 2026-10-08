@@ -23,3 +23,5 @@ coverage
 # fresh clone would silently lose it.
 .env*
 !.env.example
+
+.claude

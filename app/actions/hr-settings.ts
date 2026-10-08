@@ -7,6 +7,7 @@ import { currentIp, getSessionContext } from "@/lib/auth";
 import { actorFrom, record } from "@/lib/audit";
 import { can } from "@/lib/permissions";
 import { fromISODate, toISODate } from "@/lib/dates";
+import { clearEscalateCache } from "@/lib/escalation";
 
 export type SettingsResult = { ok: true } | { error: string };
 
@@ -459,6 +460,7 @@ export async function saveSetting(key: string, value: string): Promise<SettingsR
     });
   });
 
+  if (key === "approval.escalateAfterWorkingDays") clearEscalateCache();
   revalidatePath("/hr/settings");
   return { ok: true };
 }

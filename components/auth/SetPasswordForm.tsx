@@ -4,7 +4,8 @@ import { useActionState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { setPassword } from "@/app/actions/auth";
 import { Button } from "@/components/ui/Button";
-import { Field, Input } from "@/components/ui/Field";
+import { Field } from "@/components/ui/Field";
+import { PasswordInput } from "@/components/ui/PasswordInput";
 import { ErrorBox } from "@/components/ui/Feedback";
 
 export function SetPasswordForm({ hint }: { hint: string }) {
@@ -26,10 +27,9 @@ export function SetPasswordForm({ hint }: { hint: string }) {
         error={error?.field === "password" ? error.error : undefined}
         required
       >
-        <Input
+        <PasswordInput
           id="password"
           name="password"
-          type="password"
           autoComplete="new-password"
           autoFocus
           required
@@ -43,7 +43,7 @@ export function SetPasswordForm({ hint }: { hint: string }) {
         error={error?.field === "confirm" ? error.error : undefined}
         required
       >
-        <Input id="confirm" name="confirm" type="password" autoComplete="new-password" required />
+        <PasswordInput id="confirm" name="confirm" autoComplete="new-password" required />
       </Field>
 
       {error && !error.field && <ErrorBox>{error.error}</ErrorBox>}

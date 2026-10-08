@@ -81,17 +81,18 @@ export async function signIn(_previous: unknown, formData: FormData): Promise<Ac
 
   if (!(await bcrypt.compare(password, user.passwordHash))) return refuse("wrong password");
 
-  await clearFailures(ip);
-  await createSession(user.id);
-
-  await recordQuietly({
-    action: "auth.signed_in",
-    actor: actorFrom({ ...user, fullName: user.employee?.fullName ?? user.email }),
-    targetType: "user",
-    targetId: user.id,
-    targetLabel: user.email,
-    ip,
-  });
+  await Promise.all([
+    clearFailures(ip),
+    createSession(user.id),
+    recordQuietly({
+      action: "auth.signed_in",
+      actor: actorFrom({ ...user, fullName: user.employee?.fullName ?? user.email }),
+      targetType: "user",
+      targetId: user.id,
+      targetLabel: user.email,
+      ip,
+    }),
+  ]);
 
   if (user.mustChangePassword) return { ok: true, redirectTo: "/set-password" };
   return { ok: true, redirectTo: homePathFor({ id: user.id, role: user.role }) };

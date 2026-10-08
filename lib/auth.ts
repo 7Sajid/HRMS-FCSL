@@ -1,3 +1,4 @@
+import { cache } from "react";
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { SignJWT, jwtVerify } from "jose";
@@ -109,7 +110,7 @@ export type SessionContext = {
  * The one hot path. A single query, and every reason to refuse is checked here
  * rather than scattered across the pages that call it.
  */
-export async function getSessionContext(): Promise<SessionContext | null> {
+export const getSessionContext = cache(async function getSessionContext(): Promise<SessionContext | null> {
   const jar = await cookies();
   const token = jar.get(COOKIE_NAME)?.value;
   if (!token) return null;
@@ -149,7 +150,7 @@ export async function getSessionContext(): Promise<SessionContext | null> {
 
   const { employee, ...plainUser } = user;
   return { user: plainUser as User, employee, viewer, employeeId: employee?.id ?? null };
-}
+});
 
 export async function getCurrentUser(): Promise<SessionContext | null> {
   return getSessionContext();

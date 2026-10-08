@@ -23,7 +23,13 @@ export const DEFAULT_ESCALATE_AFTER_WORKING_DAYS = 3;
  *  and an approver on holiday is exactly who the reminder is for. */
 const WEEKLY_OFF = [5, 6] as const;
 
+let cachedSetting: { value: number; expiresAt: number } | null = null;
+
 export async function escalateAfterWorkingDays(): Promise<number> {
+  const now = Date.now();
+  if (cachedSetting && cachedSetting.expiresAt > now) {
+    return cachedSetting.value;
+  }
   const setting = await prisma.setting.findUnique({
     where: { key: "approval.escalateAfterWorkingDays" },
   });
@@ -31,7 +37,13 @@ export async function escalateAfterWorkingDays(): Promise<number> {
   // A blank or corrupt setting falls back rather than escalating everything at
   // zero days, which would turn the whole inbox amber and teach people to
   // ignore the colour.
-  return Number.isFinite(value) && value > 0 ? value : DEFAULT_ESCALATE_AFTER_WORKING_DAYS;
+  const resolved = Number.isFinite(value) && value > 0 ? value : DEFAULT_ESCALATE_AFTER_WORKING_DAYS;
+  cachedSetting = { value: resolved, expiresAt: now + 60_000 };
+  return resolved;
+}
+
+export function clearEscalateCache(): void {
+  cachedSetting = null;
 }
 
 /** How long something has been sitting, in working days. */
